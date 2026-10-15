@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.schemas import AssetCreate, AssetOut, AssetUpdate, TagOut
-from app.security import generation_rate_limit
+from app.security import _check_upload_rate_limit
 from app.services import assets as assets_service
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -70,7 +70,7 @@ async def upload_asset_endpoint(
     db: Session = Depends(get_db),
 ):
     """Upload a file and register it as an asset (multipart)."""
-    generation_rate_limit(request)
+    _check_upload_rate_limit(request)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     asset = await assets_service.upload_asset(
         db, file, description=description, tags=tag_list, model_profile_id=model_profile_id

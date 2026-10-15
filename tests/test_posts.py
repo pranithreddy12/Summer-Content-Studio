@@ -151,6 +151,21 @@ def test_patch_status_field_rejected_422(client):
     assert resp.json()["status"] == "draft"
 
 
+def test_patch_naive_datetime_422(client):
+    """PATCH with naive planned_publish_at → 422 (not 500).
+
+    POST already rejects naive datetimes (test_manual_create_naive_datetime_422),
+    but the same validator was not reached on PATCH because the schema accepted the
+    bare ISO string. Now PATCH parses then validates, and returns a 422 with the
+    same ``validation_error`` code.
+    """
+    resp = _create_post(client)
+    post_id = resp.json()["id"]
+    resp = client.patch(f"/api/v1/posts/{post_id}", json={"planned_publish_at": "2030-01-01T10:00:00"})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "validation_error"
+
+
 def test_patch_past_planned_time_422(client):
     resp = _create_post(client)
     post_id = resp.json()["id"]

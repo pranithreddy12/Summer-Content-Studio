@@ -158,7 +158,10 @@ def generate_draft(
         )
         db.add(log)
         db.commit()
-        raise HTTPException(status_code=e.http_status, detail=e.message)
+        raise HTTPException(
+            status_code=e.http_status,
+            detail={"code": e.category, "message": e.message},
+        )
 
     duration_ms = int((time.time() - start_time) * 1000)
 
@@ -184,7 +187,10 @@ def generate_draft(
         )
         db.add(log)
         db.commit()
-        raise HTTPException(status_code=e.http_status, detail=e.message)
+        raise HTTPException(
+            status_code=e.http_status,
+            detail={"code": e.category, "message": e.message},
+        )
 
     # 6. Persist post + variant + log in single commit
     post = ContentPost(
@@ -261,7 +267,10 @@ def generate_draft(
             ).scalar_one_or_none()
             if existing:
                 return existing
-        raise HTTPException(status_code=500, detail="Failed to create post")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "persist_error", "message": "Failed to create post"},
+        )
 
     db.refresh(post)
     return post
@@ -285,7 +294,7 @@ def regenerate(
     if post.status == PostStatus.archived.value:
         raise HTTPException(status_code=409, detail="Cannot regenerate archived post")
 
-    # Rebuild GenerateRequest from post.generation_input (or post fields for manual)
+    # Rebuild context from the stored generation_input (or post fields for manual posts).
     profile = db.get(ModelProfile, post.model_profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -306,29 +315,45 @@ def regenerate(
         if not campaign_tag:
             campaign_tag = type("Fake", (), {"name": post.campaign})()
 
-    # Parse generation_input or build from post
     from app.models import Platform, ContentType
     platform = Platform(post.platform)
     content_type = ContentType(post.content_type)
 
-    # Build context from post
+    # Keep the existing caption for the "avoid repeating" hint.
     existing_caption = post.caption
 
-    # Render prompts with avoid_repeating
+    # Pull the original brief off generation_input when available.
+    if post.generation_input:
+        gi = post.generation_input
+        user = render_user(
+            platform=platform,
+            content_type=content_type,
+            campaign_name=campaign_tag.name,
+            asset=asset,
+            asset_context=gi.get("asset_context", ""),
+            seasonal_context=gi.get("seasonal_context", ""),
+            tone_variation=req.tone_variation or gi.get("tone_variation", "") or "",
+            cta_request=gi.get("cta_request", ""),
+            extra_restrictions=gi.get("extra_restrictions", []),
+            avoid_repeating=existing_caption,
+            extra_instructions=req.extra_instructions,
+        )
+    else:
+        user = render_user(
+            platform=platform,
+            content_type=content_type,
+            campaign_name=campaign_tag.name,
+            asset=asset,
+            asset_context="",
+            seasonal_context="",
+            tone_variation=req.tone_variation or "",
+            cta_request="",
+            extra_restrictions=[],
+            avoid_repeating=existing_caption,
+            extra_instructions=req.extra_instructions,
+        )
+
     system = render_system(profile, platform, content_type)
-    user = render_user(
-        platform=platform,
-        content_type=content_type,
-        campaign_name=campaign_tag.name,
-        asset=asset,
-        asset_context="",
-        seasonal_context="",
-        tone_variation=req.tone_variation or "",
-        cta_request="",
-        extra_restrictions=[],
-        avoid_repeating=existing_caption,
-        extra_instructions=req.extra_instructions,
-    )
 
     # Call Claude
     start_time = time.time()
@@ -354,7 +379,10 @@ def regenerate(
         )
         db.add(log)
         db.commit()
-        raise HTTPException(status_code=e.http_status, detail=e.message)
+        raise HTTPException(
+            status_code=e.http_status,
+            detail={"code": e.category, "message": e.message},
+        )
 
     duration_ms = int((time.time() - start_time) * 1000)
 
@@ -380,7 +408,10 @@ def regenerate(
         )
         db.add(log)
         db.commit()
-        raise HTTPException(status_code=e.http_status, detail=e.message)
+        raise HTTPException(
+            status_code=e.http_status,
+            detail={"code": e.category, "message": e.message},
+        )
 
     # Success log
     log = GenerationLog(

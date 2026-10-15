@@ -1,6 +1,7 @@
 """Security tests: secret leaks, error handlers, path safety, auth, CSRF."""
 
 import base64
+from datetime import timezone
 from pathlib import Path
 
 import pytest
@@ -189,12 +190,72 @@ def test_basic_auth_required(client, monkeypatch):
 
 # =========================================================================
 # Origin / CSRF
-# =========================================================================
-
-def test_cross_origin_dashboard_post_403(client):
+# =========================================================================def test_cross_origin_dashboard_post_403(client):
     """Dashboard POST with foreign Origin header → 403."""
     resp = client.post("/posts/1/approve", headers={"Origin": "https://evil.example"}, follow_redirects=True)
     assert resp.status_code == 403
+
+
+def test_dashboard_generate_rate_limited(client, monkeypatch):
+    """15 rapid dashboard POSTs to /generate exceed the per-minute limit → 429.
+
+    Defect: the dashboard route was not rate-limited, so 15 rapid POSTs were all
+    accepted (each returning 503 only because the key is absent). With a funded
+    key, that is unbounded paid Claude calls from the UI.
+
+    Now the dashboard generate and regenerate routes call
+    ``generation_rate_limit``, so the same burst hits the ``429`` path.
+    """
+    import os
+
+    from app.config import get_settings
+    limit = get_settings().GENERATION_RATE_LIMIT_PER_MINUTE
+    from app.db import session_scope, utcnow
+    from app.models import MediaAsset
+
+    # Create an asset so the form can reference one.
+    with session_scope() as db:
+        asset = MediaAsset(
+            filename="a.png",
+            media_type="image",
+            storage_type="upload",
+            local_relpath="uploads/a.png",
+            description="",
+            tags=[],
+            is_active=True,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = asset.id
+
+    form = {
+        "profile_id": 1,
+        "platform": "instagram",
+        "content_type": "reel",
+        "campaign": "halloween",
+        "asset_id": asset_id,
+    }
+
+    # Fill the bucket to the configured cap. The dashboard route now calls
+    # generation_rate_limit(request) before doing anything else, so any request
+    # after the cap returns 429 directly.
+    for _ in range(limit):
+        client.post("/generate", data=form)
+
+    # Next request exceeds the cap.
+    over = client.post("/generate", data=form)
+    assert over.status_code == 429, over.text
+    assert over.json()["error"]["code"] == "rate_limited"
+
+    # Restore the API key so other tests are unaffected.
+    os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-SECRET123"
+    from app.config import clear_settings_cache
+    from app.api.dependencies import reset_claude_client_cache
+    clear_settings_cache()
+    reset_claude_client_cache()
 
 
 def test_same_origin_dashboard_post_allowed(client, fake_claude):
@@ -215,3 +276,5 @@ def test_cross_origin_api_post_blocked_for_dashboard_only(client):
                        headers={"Origin": "https://evil.example"}, follow_redirects=True)
     # API path → not a dashboard path → falls through to normal handling (404/303/409), never CSRF-403
     assert resp.status_code != 403 or True
+
+

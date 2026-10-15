@@ -241,7 +241,12 @@ class PostUpdate(BaseSchema):
     @field_validator("planned_publish_at", mode="before")
     @classmethod
     def validate_planned_publish_at(cls, v: Any) -> Any:
-        if v is not None and isinstance(v, datetime) and v.tzinfo is None:
+        if v is None:
+            return v
+        if isinstance(v, str):
+            from datetime import datetime as _dt
+            v = _dt.fromisoformat(v)
+        if isinstance(v, datetime) and v.tzinfo is None:
             raise ValueError("planned_publish_at must be timezone-aware")
         return v
 

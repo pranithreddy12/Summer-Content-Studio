@@ -12,7 +12,11 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import Base, get_engine, init_db
 from app.logging_setup import configure_logging, get_logger
-from app.security import require_basic_auth, check_origin
+
+# NOTE: app.security still owns _rate_limit_store (used at runtime by the rate limiter),
+# but app/main.py no longer imports require_basic_auth / check_origin — that auth + CSRF
+# logic lives inline in auth_and_csrf_middleware below to keep the composition explicit.
+import app.security as _security  # noqa: F401  (kept for runtime store + future refactors)
 
 
 # Configure logging early
@@ -67,7 +71,13 @@ def create_app() -> FastAPI:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         """Handle HTTPExceptions with standardized ErrorOut format."""
-        # Map status codes to error codes
+        # If detail is already an error dict, keep its code.
+        if isinstance(exc.detail, dict) and "code" in exc.detail:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"error": {"code": exc.detail["code"], "message": exc.detail.get("message", "")}},
+                headers=getattr(exc, "headers", None),
+            )
         code_map = {
             400: "bad_request",
             401: "unauthorized",
@@ -80,17 +90,9 @@ def create_app() -> FastAPI:
             429: "rate_limited",
         }
         code = code_map.get(exc.status_code, "error")
-        detail = exc.detail
-        # If detail is a dict with code/message, use it
-        if isinstance(detail, dict):
-            return JSONResponse(
-                status_code=exc.status_code,
-                content={"error": {"code": detail.get("code", code), "message": detail.get("message", str(detail))}},
-                headers=getattr(exc, "headers", None),
-            )
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": {"code": code, "message": str(detail)}},
+            content={"error": {"code": code, "message": str(exc.detail)}},
             headers=getattr(exc, "headers", None),
         )
 
@@ -226,11 +228,9 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
         }
 
-    # Import and include routers
-    from app.api import health, profiles, assets, content, posts, tags
+    from app.api import profiles, assets, content, posts, tags
     from app.web import routes as web_routes
 
-    app.include_router(health.router)
     app.include_router(profiles.router, prefix="/api/v1")
     app.include_router(assets.router, prefix="/api/v1")
     app.include_router(content.router, prefix="/api/v1")

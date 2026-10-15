@@ -155,6 +155,13 @@ def generation_rate_limit(request: Request) -> None:
     check_rate_limit(request, settings.GENERATION_RATE_LIMIT_PER_MINUTE)
 
 
+def _check_upload_rate_limit(request: Request) -> None:
+    """Rate limit for file upload endpoints (separate bucket from generation)."""
+    settings = get_settings()
+    upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT_PER_MINUTE", 20)
+    check_rate_limit(request, upload_limit)
+
+
 # =========================================================================
 # Safe Path Helpers
 # =========================================================================

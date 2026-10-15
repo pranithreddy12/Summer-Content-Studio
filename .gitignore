@@ -9,3 +9,13 @@ data/
 .idea/
 .vscode/
 *.log
+
+# audit scratch (kept out of future commits)
+audit_*.xml
+pytest_status.txt
+
+# personal scratchpad from another tool, not part of the repo
+freebuff_memory
+.opencode/
+opencode_memory.md
+.codeflow/

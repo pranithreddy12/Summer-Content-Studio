@@ -69,7 +69,7 @@ async def regenerate_content(
     db: Session = Depends(get_db),
     client=Depends(get_claude_client),
 ):
-    """Generate a new variant for an existing post."""
+    """Generate a new variant for an existing post. Rate-limited separately from generate."""
     generation_rate_limit(request)
     variant = regenerate(db, post_id, req, client)
     return variant

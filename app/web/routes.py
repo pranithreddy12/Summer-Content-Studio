@@ -17,7 +17,7 @@ from app.models import (
     ModelProfile, Tag, MediaAsset, ContentPost, ContentVariant, PostStatus, PostSource
 )
 from app.schemas import GenerateRequest, PostCreate, PostUpdate, RegenerateRequest
-from app.security import get_or_create_tags, safe_relpath
+from app.security import generation_rate_limit, get_or_create_tags, safe_relpath
 from app.services.posts import (
     list_posts, get_post, approve_post, archive_post, restore_post,
     apply_variant, stats, update_post
@@ -409,7 +409,13 @@ async def generate_content(
     db: Session = Depends(get_db),
     client=Depends(get_claude_client),
 ):
-    """Generate content via service (same code path as the API)."""
+    """Generate content via service (same code path as the API).
+
+    Rate-limited on the dashboard (separate call site from the API), so the UI
+    cannot exhaust the generation budget.
+    """
+    generation_rate_limit(request)
+
     from app.services.generation import generate_draft
 
     # Parse extra restrictions
@@ -672,7 +678,13 @@ async def post_regenerate(
     db: Session = Depends(get_db),
     client=Depends(get_claude_client),
 ):
-    """Generate a new variant for a post (same service as the API)."""
+    """Generate a new variant for a post (same service as the API).
+
+    Rate-limited on the dashboard (separate call site from the API), so repeated
+    clicks cannot exhaust the generation budget.
+    """
+    generation_rate_limit(request)
+
     from app.services.generation import regenerate
 
     post = get_post(db, post_id)

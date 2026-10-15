@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     # Rate limiting
     GENERATION_RATE_LIMIT_PER_MINUTE: int = 10
+    UPLOAD_RATE_LIMIT_PER_MINUTE: int = 20
 
     @field_validator("APP_ENV")
     @classmethod
