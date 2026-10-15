@@ -1,0 +1,314 @@
+"""Pydantic request/response schemas."""
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.models import (
+    Platform,
+    ContentType,
+    PostStatus,
+    MediaType,
+    StorageType,
+    PostSource,
+    VALID_COMBOS,
+)
+
+
+# =========================================================================
+# Base configurations
+# =========================================================================
+
+class BaseSchema(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        str_strip_whitespace=True,
+        extra="forbid",
+    )
+
+
+# =========================================================================
+# Profile schemas
+# =========================================================================
+
+class ProfileOut(BaseSchema):
+    id: int
+    slug: str
+    name: str
+    handles: Dict[str, str]
+    persona_description: str
+    tone_style: str
+    communication_rules: List[str]
+    restricted_topics: List[str]
+    style_notes: str
+    cta_guidelines: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("handles", "communication_rules", "restricted_topics", mode="before")
+    @classmethod
+    def deserialize_json_fields(cls, v):
+        """Deserialize JSON strings from DB into dict/list."""
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+
+class ProfileUpdate(BaseSchema):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    persona_description: Optional[str] = None
+    tone_style: Optional[str] = None
+    communication_rules: Optional[List[str]] = Field(None, max_length=30)
+    restricted_topics: Optional[List[str]] = Field(None, max_length=30)
+    style_notes: Optional[str] = None
+    cta_guidelines: Optional[str] = None
+    is_active: Optional[bool] = None
+
+    @field_validator("communication_rules", "restricted_topics", mode="before")
+    @classmethod
+    def validate_list_items(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return None
+        for item in v:
+            if not isinstance(item, str) or not (1 <= len(item) <= 300):
+                raise ValueError("Each item must be 1-300 characters")
+        return v
+
+
+# =========================================================================
+# Tag schemas
+# =========================================================================
+
+class TagOut(BaseSchema):
+    id: int
+    name: str
+    slug: str
+    is_category: bool
+    created_at: datetime
+
+
+# =========================================================================
+# Asset schemas
+# =========================================================================
+
+class AssetCreate(BaseSchema):
+    filename: str = Field(..., min_length=1, max_length=255)
+    media_type: MediaType
+    storage_type: StorageType
+    source_ref: Optional[str] = None
+    local_relpath: Optional[str] = None
+    description: str = Field("", max_length=2000)
+    tags: List[str] = Field(default_factory=list, max_length=20)
+    model_profile_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def validate_storage_fields(self) -> "AssetCreate":
+        if self.storage_type == StorageType.external_url:
+            if not self.source_ref:
+                raise ValueError("source_ref required for external_url")
+            if not self.source_ref.startswith("https://"):
+                raise ValueError("source_ref must start with https://")
+        elif self.storage_type == StorageType.local_sync:
+            if not self.local_relpath:
+                raise ValueError("local_relpath required for local_sync")
+        elif self.storage_type == StorageType.upload:
+            raise ValueError("Use /assets/upload endpoint for uploads")
+        return self
+
+
+class AssetUpdate(BaseSchema):
+    filename: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    tags: Optional[List[str]] = Field(None, max_length=20)
+    model_profile_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class AssetOut(BaseSchema):
+    id: int
+    model_profile_id: Optional[int]
+    filename: str
+    media_type: str
+    mime_type: Optional[str]
+    storage_type: str
+    source_ref: Optional[str]
+    local_relpath: Optional[str]
+    sha256: Optional[str]
+    size_bytes: Optional[int]
+    description: str
+    is_active: bool
+    imported_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    tags: List[TagOut] = []
+    preview_url: Optional[str] = None
+    usage_count: int = 0
+
+
+# =========================================================================
+# Generation schemas
+# =========================================================================
+
+class GenerateRequest(BaseSchema):
+    profile_id: int
+    platform: Platform
+    content_type: ContentType
+    campaign: str = Field(..., min_length=1, max_length=60)
+    asset_id: Optional[int] = None
+    asset_context: str = Field("", max_length=1000)
+    seasonal_context: str = Field("", max_length=500)
+    tone_variation: str = Field("", max_length=200)
+    cta_request: str = Field("", max_length=200)
+    extra_restrictions: List[str] = Field(default_factory=list, max_length=10)
+    idempotency_key: Optional[str] = Field(None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_platform_content_type(self) -> "GenerateRequest":
+        valid_types = VALID_COMBOS.get(self.platform, set())
+        if self.content_type not in valid_types:
+            raise ValueError(
+                f"Invalid content_type '{self.content_type}' for platform '{self.platform}'. "
+                f"Valid: {', '.join(t.value for t in valid_types)}"
+            )
+        return self
+
+
+class RegenerateRequest(BaseSchema):
+    tone_variation: Optional[str] = Field(None, max_length=200)
+    extra_instructions: str = Field("", max_length=500)
+
+
+class GeneratedContent(BaseSchema):
+    """Schema for Claude's JSON output (validated post-parse)."""
+    content_format: str
+    hook: str
+    caption: str
+    hashtags: List[str]
+    call_to_action: str
+    content_notes: str
+
+
+# =========================================================================
+# Post schemas
+# =========================================================================
+
+class PostCreate(BaseSchema):
+    profile_id: int
+    platform: Platform
+    content_type: ContentType
+    campaign: str = Field(..., min_length=1, max_length=60)
+    asset_id: Optional[int] = None
+    hook: str = Field("", max_length=500)
+    caption: str = Field(..., min_length=1, max_length=2200)
+    hashtags: List[str] = Field(default_factory=list, max_length=30)
+    call_to_action: str = Field("", max_length=500)
+    content_notes: str = Field("", max_length=2000)
+    tags: List[str] = Field(default_factory=list, max_length=20)
+    planned_publish_at: Optional[datetime] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_platform_content_type(self) -> "PostCreate":
+        valid_types = VALID_COMBOS.get(self.platform, set())
+        if self.content_type not in valid_types:
+            raise ValueError(
+                f"Invalid content_type '{self.content_type}' for platform '{self.platform}'. "
+                f"Valid: {', '.join(t.value for t in valid_types)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_planned_publish_at(self) -> "PostCreate":
+        if self.planned_publish_at is not None and self.planned_publish_at.tzinfo is None:
+            raise ValueError("planned_publish_at must be timezone-aware")
+        return self
+
+
+class PostUpdate(BaseSchema):
+    hook: Optional[str] = Field(None, max_length=500)
+    caption: Optional[str] = Field(None, min_length=1, max_length=2200)
+    hashtags: Optional[List[str]] = Field(None, max_length=30)
+    call_to_action: Optional[str] = Field(None, max_length=500)
+    content_notes: Optional[str] = Field(None, max_length=2000)
+    campaign: Optional[str] = Field(None, min_length=1, max_length=60)
+    tags: Optional[List[str]] = Field(None, max_length=20)
+    asset_id: Optional[int] = None
+    planned_publish_at: Optional[Union[datetime, None]] = None  # explicit null = clear
+
+    @field_validator("planned_publish_at", mode="before")
+    @classmethod
+    def validate_planned_publish_at(cls, v: Any) -> Any:
+        if v is not None and isinstance(v, datetime) and v.tzinfo is None:
+            raise ValueError("planned_publish_at must be timezone-aware")
+        return v
+
+
+class VariantOut(BaseSchema):
+    id: int
+    post_id: int
+    hook: str
+    caption: str
+    hashtags: List[str]
+    call_to_action: str
+    content_notes: str
+    content_format: str
+    generation_log_id: Optional[int]
+    created_at: datetime
+
+    @field_validator("hashtags", mode="before")
+    @classmethod
+    def deserialize_hashtags(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+
+class PostOut(BaseSchema):
+    id: int
+    model_profile_id: int
+    media_asset_id: Optional[int]
+    platform: str
+    content_type: str
+    campaign: str
+    hook: str
+    caption: str
+    hashtags: List[str]
+    call_to_action: str
+    content_notes: str
+    status: str
+    planned_publish_at: Optional[datetime]
+    source: str
+    generation_input: Optional[dict]
+    idempotency_key: Optional[str]
+    approved_at: Optional[datetime]
+    archived_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+    tags: List[TagOut] = []
+    asset: Optional[AssetOut] = None
+    variant_count: int = 0
+
+    @field_validator("hashtags", "generation_input", mode="before")
+    @classmethod
+    def deserialize_json_fields(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+
+# =========================================================================
+# Error schemas
+# =========================================================================
+
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+
+
+class ErrorOut(BaseModel):
+    error: ErrorDetail

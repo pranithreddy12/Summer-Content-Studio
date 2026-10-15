@@ -1,0 +1,771 @@
+"""Dashboard web routes."""
+
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from app.api.dependencies import get_claude_client
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func, desc
+from sqlalchemy.orm import Session, joinedload
+
+from app.config import get_settings
+from app.db import get_db, utcnow
+from app.models import (
+    ModelProfile, Tag, MediaAsset, ContentPost, ContentVariant, PostStatus, PostSource
+)
+from app.schemas import GenerateRequest, PostCreate, PostUpdate, RegenerateRequest
+from app.security import get_or_create_tags, safe_relpath
+from app.services.posts import (
+    list_posts, get_post, approve_post, archive_post, restore_post,
+    apply_variant, stats, update_post
+)
+from app.services.generation import generate_draft, regenerate
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/web/templates")
+
+
+def _template_response(template_name: str, context: dict, status_code: int = 200):
+    """New-style TemplateResponse wrapper (starlette >= 1.0 signature)."""
+    request = context.get("request")
+    return templates.TemplateResponse(
+        request=request, name=template_name, context=context, status_code=status_code
+    )
+
+
+# =========================================================================
+# Helper functions
+# =========================================================================
+
+def get_flash(request: Request) -> Optional[dict]:
+    """Extract flash message from query params."""
+    msg = request.query_params.get("msg")
+    kind = request.query_params.get("kind", "ok")
+    if msg:
+        return {"message": msg, "kind": kind}
+    return None
+
+
+def redirect_with_flash(url: str, message: str, kind: str = "ok") -> RedirectResponse:
+    """Create redirect with flash message in query params."""
+    from urllib.parse import quote
+    return RedirectResponse(f"{url}?msg={quote(message)}&kind={kind}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def get_settings_dep():
+    return get_settings()
+
+
+# =========================================================================
+# Overview / Dashboard
+# =========================================================================
+
+@router.get("/", response_class=HTMLResponse)
+async def overview(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Dashboard overview page."""
+    dashboard_stats = stats(db)
+    recent_posts = db.execute(
+        select(ContentPost)
+        .options(joinedload(ContentPost.asset), joinedload(ContentPost.profile))
+        .where(ContentPost.status != PostStatus.archived.value)
+        .order_by(desc(ContentPost.created_at))
+        .limit(10)
+    ).scalars().all()
+
+    upcoming = db.execute(
+        select(ContentPost)
+        .options(joinedload(ContentPost.asset), joinedload(ContentPost.profile))
+        .where(
+            ContentPost.status == PostStatus.scheduled.value,
+            ContentPost.planned_publish_at.isnot(None),
+            ContentPost.planned_publish_at > utcnow()
+        )
+        .order_by(ContentPost.planned_publish_at)
+        .limit(7)
+    ).scalars().all()
+
+    return _template_response("overview.html", {
+        "request": request,
+        "stats": dashboard_stats,
+        "recent_posts": recent_posts,
+        "upcoming": upcoming,
+        "flash": get_flash(request),
+    })
+
+
+# =========================================================================
+# Media Library
+# =========================================================================
+
+@router.get("/assets", response_class=HTMLResponse)
+async def assets_list(
+    request: Request,
+    q: str = "",
+    tag: str = "",
+    media_type: str = "",
+    storage_type: str = "",
+    unused: bool = False,
+    include_inactive: bool = False,
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """Media library page with filters."""
+    from app.services.assets import list_assets
+
+    limit = 50
+    offset = (page - 1) * limit
+
+    result = list_assets(
+        db,
+        q=q or None,
+        tags=[tag] if tag else None,
+        media_type=media_type or None,
+        storage_type=storage_type or None,
+        unused=unused,
+        include_inactive=include_inactive,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Get all category tags for filter dropdown
+    category_tags = db.execute(
+        select(Tag).where(Tag.is_category == True).order_by(Tag.name)
+    ).scalars().all()
+
+    return _template_response("assets.html", {
+        "request": request,
+        "assets": result["items"],
+        "total": result["total"],
+        "page": page,
+        "pages": (result["total"] + limit - 1) // limit,
+        "filters": {
+            "q": q, "tag": tag, "media_type": media_type,
+            "storage_type": storage_type, "unused": unused,
+            "include_inactive": include_inactive,
+        },
+        "category_tags": category_tags,
+        "flash": get_flash(request),
+    })
+
+
+@router.get("/assets/new", response_class=HTMLResponse)
+async def asset_new_form(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """New asset form page."""
+    profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.name)).scalars().all()
+    category_tags = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+    return _template_response("asset_new.html", {
+        "request": request,
+        "profiles": profiles,
+        "category_tags": category_tags,
+        "flash": get_flash(request),
+    })
+
+
+@router.post("/assets/new")
+async def asset_create(
+    request: Request,
+    # Upload form
+    file: Optional[bytes] = Form(None),
+    filename: str = Form(""),
+    description: str = Form(""),
+    tags: str = Form(""),
+    model_profile_id: Optional[int] = Form(None),
+    # External URL form
+    external_url: str = Form(""),
+    external_filename: str = Form(""),
+    external_media_type: str = Form(""),
+    external_description: str = Form(""),
+    external_tags: str = Form(""),
+    external_model_profile_id: Optional[int] = Form(None),
+    # Local sync form
+    local_relpath: str = Form(""),
+    local_filename: str = Form(""),
+    local_media_type: str = Form(""),
+    local_description: str = Form(""),
+    local_tags: str = Form(""),
+    local_model_profile_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Create asset via upload, external URL, or local sync registration."""
+    from app.services.assets import upload_asset, register_asset
+
+    form_data = await request.form()
+    form_type = form_data.get("form_type", "upload")
+
+    try:
+        if form_type == "upload":
+            upload_file = form_data.get("file")
+            if not upload_file or not hasattr(upload_file, "filename") or not upload_file.filename:
+                return redirect_with_flash("/assets/new", "No file selected", "error")
+
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+            asset = await upload_asset(
+                db, upload_file, description, tag_list, model_profile_id
+            )
+            return redirect_with_flash(f"/assets/{asset.id}", "Asset uploaded successfully")
+
+        elif form_type == "external_url":
+            from app.schemas import AssetCreate
+            from app.models import MediaType, StorageType
+
+            tag_list = [t.strip() for t in external_tags.split(",") if t.strip()]
+            req = AssetCreate(
+                filename=external_filename,
+                media_type=MediaType(external_media_type),
+                storage_type=StorageType.external_url,
+                source_ref=external_url,
+                description=external_description,
+                tags=tag_list,
+                model_profile_id=external_model_profile_id,
+            )
+            asset = register_asset(db, req)
+            return redirect_with_flash(f"/assets/{asset.id}", "Asset registered successfully")
+
+        elif form_type == "local_sync":
+            from app.schemas import AssetCreate
+            from app.models import MediaType, StorageType
+
+            tag_list = [t.strip() for t in local_tags.split(",") if t.strip()]
+            req = AssetCreate(
+                filename=local_filename,
+                media_type=MediaType(local_media_type),
+                storage_type=StorageType.local_sync,
+                local_relpath=local_relpath,
+                description=local_description,
+                tags=tag_list,
+                model_profile_id=local_model_profile_id,
+            )
+            asset = register_asset(db, req)
+            return redirect_with_flash(f"/assets/{asset.id}", "Asset registered successfully")
+
+    except HTTPException as e:
+        return redirect_with_flash("/assets/new", e.detail, "error")
+    except ValueError as e:
+        return redirect_with_flash("/assets/new", str(e), "error")
+    except Exception as e:
+        return redirect_with_flash("/assets/new", str(e), "error")
+
+    return redirect_with_flash("/assets/new", "Unknown form type", "error")
+
+
+@router.get("/assets/{asset_id}", response_class=HTMLResponse)
+async def asset_detail(
+    request: Request,
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    """Asset detail page."""
+    asset = db.get(MediaAsset, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Load related posts
+    posts = db.execute(
+        select(ContentPost)
+        .options(joinedload(ContentPost.profile))
+        .where(ContentPost.media_asset_id == asset_id)
+        .order_by(desc(ContentPost.created_at))
+    ).scalars().all()
+
+    category_tags = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+    all_tags = db.execute(select(Tag).order_by(Tag.name)).scalars().all()
+    profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.name)).scalars().all()
+
+    return _template_response("asset_detail.html", {
+        "request": request,
+        "asset": asset,
+        "posts": posts,
+        "category_tags": category_tags,
+        "all_tags": all_tags,
+        "profiles": profiles,
+        "flash": get_flash(request),
+    })
+
+
+@router.post("/assets/{asset_id}")
+async def asset_update(
+    request: Request,
+    asset_id: int,
+    filename: str = Form(""),
+    description: str = Form(""),
+    tags: str = Form(""),
+    model_profile_id: Optional[int] = Form(None),
+    is_active: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Update asset metadata."""
+    from app.services.assets import update_asset
+
+    asset = db.get(MediaAsset, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    try:
+        update_asset(db, asset_id, filename, description, tag_list, model_profile_id, is_active)
+        return redirect_with_flash(f"/assets/{asset_id}", "Asset updated successfully")
+    except Exception as e:
+        return redirect_with_flash(f"/assets/{asset_id}", str(e), "error")
+
+
+@router.post("/assets/{asset_id}/archive")
+async def asset_archive(
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    """Archive (soft delete) an asset."""
+    from app.services.assets import archive_asset
+
+    asset = db.get(MediaAsset, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    archive_asset(db, asset_id)
+    return redirect_with_flash("/assets", "Asset archived")
+
+
+@router.post("/assets/sync")
+async def assets_sync(
+    db: Session = Depends(get_db),
+):
+    """Sync media from MEDIA_SYNC_DIR."""
+    from app.services.assets import sync_media_dir
+
+    result = sync_media_dir(db)
+    return redirect_with_flash("/assets", f"Sync complete: {result['added']} added, {result['skipped']} skipped")
+
+
+# =========================================================================
+# Content Generator
+# =========================================================================
+
+@router.get("/generate", response_class=HTMLResponse)
+async def generate_form(
+    request: Request,
+    asset_id: Optional[int] = None,
+    tag: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Content generator page."""
+    profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.name)).scalars().all()
+
+    # Build asset query
+    asset_query = select(MediaAsset).where(MediaAsset.is_active == True)
+    if asset_id:
+        asset_query = asset_query.where(MediaAsset.id == asset_id)
+    elif tag:
+        asset_query = asset_query.join(MediaAsset.tags).where(Tag.slug == tag)
+    asset_query = asset_query.order_by(desc(MediaAsset.imported_at)).limit(50)
+
+    assets = db.execute(asset_query).scalars().all()
+
+    # Campaigns (category tags)
+    campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+
+    # Preselect asset if asset_id provided
+    selected_asset = None
+    if asset_id:
+        selected_asset = db.get(MediaAsset, asset_id)
+
+    return _template_response("generate.html", {
+        "request": request,
+        "profiles": profiles,
+        "assets": assets,
+        "campaigns": campaigns,
+        "selected_asset": selected_asset,
+        "platforms": ["instagram", "tiktok"],
+        "content_types": {
+            "instagram": ["feed_post", "reel", "story"],
+            "tiktok": ["video", "photo_post"],
+        },
+        "flash": get_flash(request),
+    })
+
+
+@router.post("/generate")
+async def generate_content(
+    request: Request,
+    profile_id: int = Form(...),
+    platform: str = Form(...),
+    content_type: str = Form(...),
+    campaign: str = Form(...),
+    asset_id: Optional[int] = Form(None),
+    asset_context: str = Form(""),
+    seasonal_context: str = Form(""),
+    tone_variation: str = Form(""),
+    cta_request: str = Form(""),
+    extra_restrictions: str = Form(""),
+    idempotency_key: str = Form(""),
+    db: Session = Depends(get_db),
+    client=Depends(get_claude_client),
+):
+    """Generate content via service (same code path as the API)."""
+    from app.services.generation import generate_draft
+
+    # Parse extra restrictions
+    extra_restrictions_list = [r.strip() for r in extra_restrictions.split("\n") if r.strip()]
+
+    # Generate idempotency key if not provided
+    if not idempotency_key:
+        idempotency_key = uuid.uuid4().hex
+
+    req = GenerateRequest(
+        profile_id=profile_id,
+        platform=platform,
+        content_type=content_type,
+        campaign=campaign,
+        asset_id=asset_id,
+        asset_context=asset_context,
+        seasonal_context=seasonal_context,
+        tone_variation=tone_variation,
+        cta_request=cta_request,
+        extra_restrictions=extra_restrictions_list,
+        idempotency_key=idempotency_key,
+    )
+
+    try:
+        post = generate_draft(db, req, client)
+        return redirect_with_flash(f"/posts/{post.id}", "Content generated successfully")
+    except HTTPException as e:
+        # Re-render form with error
+        profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.name)).scalars().all()
+        assets = db.execute(select(MediaAsset).where(MediaAsset.is_active == True).order_by(desc(MediaAsset.imported_at)).limit(50)).scalars().all()
+        campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+
+        return _template_response("generate.html", {
+            "request": request,
+            "profiles": profiles,
+            "assets": assets,
+            "campaigns": campaigns,
+            "platforms": ["instagram", "tiktok"],
+            "content_types": {
+                "instagram": ["feed_post", "reel", "story"],
+                "tiktok": ["video", "photo_post"],
+            },
+            "error": e.detail,
+            "form_data": req.model_dump(),
+        }, status_code=e.status_code)
+    except Exception as e:
+        return redirect_with_flash("/generate", str(e), "error")
+
+
+# =========================================================================
+# Content Queue / Posts
+# =========================================================================
+
+@router.get("/posts", response_class=HTMLResponse)
+async def posts_list(
+    request: Request,
+    platform: str = "",
+    status_filter: str = "",
+    campaign: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """Content queue page."""
+    limit = 50
+    offset = (page - 1) * limit
+
+    # Build filters
+    status_list = [status_filter] if status_filter else None
+    if status_filter == "archived":
+        status_list = ["archived"]
+
+    result = list_posts(
+        db,
+        platform=platform or None,
+        status=status_list,
+        campaign=campaign or None,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Filter options
+    platforms = ["instagram", "tiktok"]
+    statuses = ["draft", "approved", "scheduled", "published", "failed", "archived"]
+    campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+
+    return _template_response("posts.html", {
+        "request": request,
+        "posts": result["items"],
+        "total": result["total"],
+        "page": page,
+        "pages": (result["total"] + limit - 1) // limit,
+        "filters": {"platform": platform, "status": status_filter, "campaign": campaign},
+        "platforms": platforms,
+        "statuses": statuses,
+        "campaigns": campaigns,
+        "flash": get_flash(request),
+        "timezone": get_settings().APP_TIMEZONE,
+    })
+
+
+@router.get("/posts/{post_id}", response_class=HTMLResponse)
+async def post_detail(
+    request: Request,
+    post_id: int,
+    db: Session = Depends(get_db),
+):
+    """Post detail page."""
+    post = get_post(db, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # Load variants
+    variants = db.execute(
+        select(ContentVariant)
+        .where(ContentVariant.post_id == post_id)
+        .order_by(desc(ContentVariant.created_at))
+    ).scalars().all()
+
+    campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
+    all_tags = db.execute(select(Tag).order_by(Tag.name)).scalars().all()
+
+    return _template_response("post_detail.html", {
+        "request": request,
+        "post": post,
+        "variants": variants,
+        "campaigns": campaigns,
+        "all_tags": all_tags,
+        "timezone": get_settings().APP_TIMEZONE,
+        "flash": get_flash(request),
+    })
+
+
+@router.post("/posts/{post_id}")
+async def post_update(
+    request: Request,
+    post_id: int,
+    hook: str = Form(""),
+    caption: str = Form(""),
+    hashtags: str = Form(""),
+    call_to_action: str = Form(""),
+    content_notes: str = Form(""),
+    campaign: str = Form(""),
+    tags: str = Form(""),
+    asset_id: Optional[int] = Form(None),
+    planned_publish_at: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Update post content."""
+    post = get_post(db, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # Parse hashtags
+    hashtag_list = [h.strip().lstrip("#") for h in hashtags.replace(",", " ").split() if h.strip()]
+
+    # Parse tags
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    # Parse planned_publish_at
+    planned_dt = None
+    if planned_publish_at:
+        try:
+            # datetime-local format: YYYY-MM-DDTHH:MM
+            planned_dt = datetime.fromisoformat(planned_publish_at)
+            # Assume local timezone, convert to UTC
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(get_settings().APP_TIMEZONE)
+            planned_dt = planned_dt.replace(tzinfo=tz).astimezone(timezone.utc)
+        except ValueError:
+            pass
+
+    req = PostUpdate(
+        hook=hook,
+        caption=caption,
+        hashtags=hashtag_list,
+        call_to_action=call_to_action,
+        content_notes=content_notes,
+        campaign=campaign,
+        tags=tag_list,
+        asset_id=asset_id,
+        planned_publish_at=planned_dt,
+    )
+
+    try:
+        update_post(db, post_id, req)
+        return redirect_with_flash(f"/posts/{post_id}", "Post updated successfully")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/variants/{variant_id}/apply")
+async def post_apply_variant(
+    post_id: int,
+    variant_id: int,
+    db: Session = Depends(get_db),
+):
+    """Apply a variant to the post."""
+    try:
+        apply_variant(db, post_id, variant_id)
+        return redirect_with_flash(f"/posts/{post_id}", "Variant applied successfully")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/approve")
+async def post_approve(
+    post_id: int,
+    db: Session = Depends(get_db),
+):
+    """Approve a post."""
+    try:
+        approve_post(db, post_id)
+        return redirect_with_flash(f"/posts/{post_id}", "Post approved")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/archive")
+async def post_archive(
+    post_id: int,
+    db: Session = Depends(get_db),
+):
+    """Archive a post."""
+    try:
+        archive_post(db, post_id)
+        return redirect_with_flash("/posts", "Post archived")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/restore")
+async def post_restore(
+    post_id: int,
+    db: Session = Depends(get_db),
+):
+    """Restore an archived post."""
+    try:
+        restore_post(db, post_id)
+        return redirect_with_flash(f"/posts/{post_id}", "Post restored")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/regenerate")
+async def post_regenerate(
+    request: Request,
+    post_id: int,
+    tone_variation: str = Form(""),
+    extra_instructions: str = Form(""),
+    db: Session = Depends(get_db),
+    client=Depends(get_claude_client),
+):
+    """Generate a new variant for a post (same service as the API)."""
+    from app.services.generation import regenerate
+
+    post = get_post(db, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    if post.status == PostStatus.archived.value:
+        return redirect_with_flash(f"/posts/{post_id}", "Cannot regenerate archived post", "error")
+
+    req = RegenerateRequest(
+        tone_variation=tone_variation or None,
+        extra_instructions=extra_instructions,
+    )
+
+    try:
+        variant = regenerate(db, post_id, req, client)
+        return redirect_with_flash(f"/posts/{post_id}", "New variant generated")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+# =========================================================================
+# Profile Management
+# =========================================================================
+
+@router.get("/profiles", response_class=HTMLResponse)
+async def profiles_list(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """List profiles."""
+    profiles = db.execute(select(ModelProfile).order_by(ModelProfile.name)).scalars().all()
+    return _template_response("profile.html", {
+        "request": request,
+        "profiles": profiles,
+        "flash": get_flash(request),
+    })
+
+
+@router.get("/profiles/{profile_id}", response_class=HTMLResponse)
+async def profile_detail(
+    request: Request,
+    profile_id: int,
+    db: Session = Depends(get_db),
+):
+    """Profile detail/edit page."""
+    profile = db.get(ModelProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    return _template_response("profile.html", {
+        "request": request,
+        "profile": profile,
+        "profiles": None,  # Single profile view
+        "flash": get_flash(request),
+    })
+
+
+@router.post("/profiles/{profile_id}")
+async def profile_update(
+    request: Request,
+    profile_id: int,
+    name: str = Form(""),
+    persona_description: str = Form(""),
+    tone_style: str = Form(""),
+    communication_rules: str = Form(""),
+    restricted_topics: str = Form(""),
+    style_notes: str = Form(""),
+    cta_guidelines: str = Form(""),
+    is_active: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Update profile."""
+    profile = db.get(ModelProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    import json
+
+    try:
+        profile.name = name
+        profile.persona_description = persona_description
+        profile.tone_style = tone_style
+        profile.communication_rules = json.dumps([r.strip() for r in communication_rules.split("\n") if r.strip()])
+        profile.restricted_topics = json.dumps([r.strip() for r in restricted_topics.split("\n") if r.strip()])
+        profile.style_notes = style_notes
+        profile.cta_guidelines = cta_guidelines
+        profile.is_active = is_active
+
+        db.commit()
+        db.refresh(profile)
+        return redirect_with_flash(f"/profiles/{profile_id}", "Profile updated successfully")
+    except Exception as e:
+        return redirect_with_flash(f"/profiles/{profile_id}", str(e), "error")

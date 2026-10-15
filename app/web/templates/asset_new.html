@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}New Asset - Summer Content{% endblock %}
+{% block content %}
+<h1>New Asset</h1>
+
+<div class="tabs">
+    <button class="tab active" data-tab="upload">Upload File</button>
+    <button class="tab" data-tab="external">Dropbox Link</button>
+    <button class="tab" data-tab="local">Local Sync Path</button>
+</div>
+
+<!-- Upload form -->
+<form method="post" action="/assets/new" enctype="multipart/form-data" class="tab-content active form-box" id="tab-upload">
+    <input type="hidden" name="form_type" value="upload">
+    <div class="form-group">
+        <label for="file">File *</label>
+        <input type="file" name="file" id="file" accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mov,.webm" required>
+        <small>Max 25MB image, 500MB video. jpg, png, webp, gif, mp4, mov, webm.</small>
+    </div>
+    <div class="form-group">
+        <label for="description">Description</label>
+        <textarea name="description" id="description" rows="3"
+            placeholder="Describe what's actually in the image — Claude only knows what you write here"></textarea>
+    </div>
+    <div class="form-group">
+        <label for="tags">Tags (comma-separated)</label>
+        <input type="text" name="tags" id="tags" placeholder="halloween, spooky">
+    </div>
+    <div class="form-group">
+        <label for="model_profile_id">Profile</label>
+        <select name="model_profile_id" id="model_profile_id">
+            <option value="">None</option>
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Upload</button>
+</form>
+
+<!-- External URL form -->
+<form method="post" action="/assets/new" class="tab-content form-box" id="tab-external">
+    <input type="hidden" name="form_type" value="external_url">
+    <div class="form-group">
+        <label for="external_url">Dropbox Shared Link *</label>
+        <input type="url" name="external_url" id="external_url" placeholder="https://www.dropbox.com/…" required>
+        <small>Stored as reference only — no preview or download in Phase 1.</small>
+    </div>
+    <div class="form-group">
+        <label for="external_filename">Display Name *</label>
+        <input type="text" name="external_filename" id="external_filename" required maxlength="255">
+    </div>
+    <div class="form-group">
+        <label for="external_media_type">Media Type *</label>
+        <select name="external_media_type" id="external_media_type" required>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="external_description">Description</label>
+        <textarea name="external_description" id="external_description" rows="3"
+            placeholder="Describe what's actually in the image"></textarea>
+    </div>
+    <div class="form-group">
+        <label for="external_tags">Tags (comma-separated)</label>
+        <input type="text" name="external_tags" id="external_tags" placeholder="halloween">
+    </div>
+    <div class="form-group">
+        <label for="external_model_profile_id">Profile</label>
+        <select name="external_model_profile_id" id="external_model_profile_id">
+            <option value="">None</option>
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Register Link</button>
+</form>
+
+<!-- Local sync form -->
+<form method="post" action="/assets/new" class="tab-content form-box" id="tab-local">
+    <input type="hidden" name="form_type" value="local_sync">
+    <div class="form-group">
+        <label for="local_relpath">Relative Path in Sync Folder *</label>
+        <input type="text" name="local_relpath" id="local_relpath" placeholder="Halloween/img001.jpg" required>
+        <small>Path relative to MEDIA_SYNC_DIR (e.g. <code>Halloween/img001.jpg</code>).</small>
+    </div>
+    <div class="form-group">
+        <label for="local_filename">Display Name *</label>
+        <input type="text" name="local_filename" id="local_filename" required maxlength="255">
+    </div>
+    <div class="form-group">
+        <label for="local_media_type">Media Type *</label>
+        <select name="local_media_type" id="local_media_type" required>
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="local_description">Description</label>
+        <textarea name="local_description" id="local_description" rows="3"></textarea>
+    </div>
+    <div class="form-group">
+        <label for="local_tags">Tags (comma-separated)</label>
+        <input type="text" name="local_tags" id="local_tags">
+    </div>
+    <div class="form-group">
+        <label for="local_model_profile_id">Profile</label>
+        <select name="local_model_profile_id" id="local_model_profile_id">
+            <option value="">None</option>
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Register File</button>
+</form>
+
+<p><a href="/assets">&larr; Back to Media Library</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+});
+</script>
+{% endblock %}

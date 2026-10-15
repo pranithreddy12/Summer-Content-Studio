@@ -1,0 +1,6 @@
+{% if flash %}
+<div class="flash flash-{{ flash.kind }}">
+    {{ flash.message }}
+    <button class="flash-close" onclick="this.parentElement.remove()">&times;</button>
+</div>
+{% endif %}

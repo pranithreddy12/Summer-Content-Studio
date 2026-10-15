@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Overview - Summer Content{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+
+<div class="cards">
+    <div class="card">
+        <div class="card-value">{{ stats.total_assets }}</div>
+        <div class="card-label">Active Assets</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ stats.total_posts }}</div>
+        <div class="card-label">Total Posts</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ stats.drafts_awaiting_approval }}</div>
+        <div class="card-label">Drafts Awaiting Approval</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ stats.approved }}</div>
+        <div class="card-label">Approved</div>
+    </div>
+    <div class="card">
+        <div class="card-value">{{ stats.scheduled }}</div>
+        <div class="card-label">Scheduled</div>
+    </div>
+</div>
+
+<section class="section">
+    <h2>Posts by Platform &amp; Status</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Platform</th>
+                <th>Draft</th>
+                <th>Approved</th>
+                <th>Scheduled</th>
+                <th>Published</th>
+                <th>Failed</th>
+                <th>Archived</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for platform, counts in stats.by_platform_status.items() %}
+            <tr>
+                <td>{{ platform }}</td>
+                <td>{{ counts.draft }}</td>
+                <td>{{ counts.approved }}</td>
+                <td>{{ counts.scheduled }}</td>
+                <td>{{ counts.published }}</td>
+                <td>{{ counts.failed }}</td>
+                <td>{{ counts.archived }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="section">
+    <h2>Recent Posts</h2>
+    {% if recent_posts %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Platform</th>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Caption</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in recent_posts %}
+            <tr>
+                <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
+                <td>{{ post.platform }}</td>
+                <td>{{ post.campaign }}</td>
+                <td><span class="badge badge-{{ post.status }}">{{ post.status }}</span></td>
+                <td class="truncate">{{ post.caption[:100] }}{% if post.caption|length > 100 %}…{% endif %}</td>
+                <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No posts yet. <a href="/generate">Generate your first post</a>.</p>
+    {% endif %}
+</section>
+
+<section class="section">
+    <h2>Upcoming (Next 7 Scheduled)</h2>
+    {% if upcoming %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Platform</th>
+                <th>Campaign</th>
+                <th>Planned Publish</th>
+                <th>Caption</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in upcoming %}
+            <tr>
+                <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
+                <td>{{ post.platform }}</td>
+                <td>{{ post.campaign }}</td>
+                <td>{{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+                <td class="truncate">{{ post.caption[:100] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">Nothing scheduled yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

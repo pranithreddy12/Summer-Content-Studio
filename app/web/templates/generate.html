@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Generate - Summer Content{% endblock %}
+{% block content %}
+<h1>Generate Content</h1>
+
+{% if error %}
+<div class="flash flash-error">
+    {{ error }}
+    <button class="flash-close" onclick="this.parentElement.remove()">&times;</button>
+</div>
+{% endif %}
+
+<form method="post" action="/generate" class="form-box form-wide">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="profile_id">Profile *</label>
+            <select name="profile_id" id="profile_id" required>
+                {% for p in profiles %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="campaign">Campaign *</label>
+            <select name="campaign" id="campaign" required>
+                {% for c in campaigns %}
+                <option value="{{ c.slug }}" {% if c.slug == 'halloween' %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="platform">Platform *</label>
+            <select name="platform" id="platform" required>
+                {% for p in platforms %}
+                <option value="{{ p }}">{{ p }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="content_type">Content Type *</label>
+            <select name="content_type" id="content_type" required>
+                {% for p, types in content_types.items() %}
+                <optgroup label="{{ p }}">
+                    {% for t in types %}
+                    <option value="{{ t }}" data-platform="{{ p }}">{{ t }}</option>
+                    {% endfor %}
+                </optgroup>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="asset_id">Media Asset</label>
+        <select name="asset_id" id="asset_id">
+            <option value="">None (text-first post)</option>
+            {% for a in assets %}
+            <option value="{{ a.id }}"
+                {% if selected_asset and selected_asset.id == a.id %}selected{% endif %}>
+                {{ a.filename }}{% if a.media_type == 'video' %} (video){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        {% if selected_asset %}
+        <div class="selected-asset">
+            <strong>Selected:</strong> {{ selected_asset.filename }}
+            {% if selected_asset.description %}
+            <p class="asset-desc">{{ selected_asset.description }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="form-group">
+        <label for="seasonal_context">Seasonal Context</label>
+        <input type="text" name="seasonal_context" id="seasonal_context"
+            value="{{ form_data.seasonal_context if form_data else '' }}"
+            maxlength="500" placeholder="e.g. Halloween week">
+    </div>
+
+    <div class="form-group">
+        <label for="asset_context">Extra Asset Context</label>
+        <input type="text" name="asset_context" id="asset_context"
+            value="{{ form_data.asset_context if form_data else '' }}"
+            maxlength="1000" placeholder="Additional context about the media">
+    </div>
+
+    <div class="form-group">
+        <label for="tone_variation">Tone Variation</label>
+        <input type="text" name="tone_variation" id="tone_variation"
+            value="{{ form_data.tone_variation if form_data else '' }}"
+            maxlength="200" placeholder="e.g. more teasing">
+    </div>
+
+    <div class="form-group">
+        <label for="cta_request">CTA Request</label>
+        <input type="text" name="cta_request" id="cta_request"
+            value="{{ form_data.cta_request if form_data else '' }}"
+            maxlength="200" placeholder="Leave blank to let Claude decide">
+    </div>
+
+    <div class="form-group">
+        <label for="extra_restrictions">Extra Restrictions (one per line)</label>
+        <textarea name="extra_restrictions" id="extra_restrictions" rows="3"
+            placeholder="No emojis&#10;Keep under 100 characters">{{ form_data.extra_restrictions | join('\n') if form_data and form_data.extra_restrictions else '' }}</textarea>
+    </div>
+
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+
+    <button type="submit" class="btn btn-primary btn-lg" id="generate-btn">Generate Draft</button>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Filter content types by platform
+const platformSelect = document.getElementById('platform');
+const contentTypeSelect = document.getElementById('content_type');
+
+function filterContentTypes() {
+    const platform = platformSelect.value;
+    contentTypeSelect.querySelectorAll('option[data-platform]').forEach(opt => {
+        opt.style.display = opt.dataset.platform === platform ? '' : 'none';
+    });
+    contentTypeSelect.querySelectorAll('optgroup').forEach(group => {
+        const visible = Array.from(group.querySelectorAll('option')).some(o => o.style.display !== 'none');
+        group.style.display = visible ? '' : 'none';
+    });
+    // Select first visible option
+    const firstVisible = contentTypeSelect.querySelector('option[data-platform]:not([style*="display: none"])');
+    if (firstVisible) contentTypeSelect.value = firstVisible.value;
+}
+
+platformSelect.addEventListener('change', filterContentTypes);
+filterContentTypes();
+
+// Disable submit button on click to prevent double submission
+document.getElementById('generate-btn').addEventListener('click', function(e) {
+    const form = this.form;
+    if (form.checkValidity()) {
+        this.disabled = true;
+        this.textContent = 'Generating…';
+        setTimeout(() => { this.disabled = false; this.textContent = 'Generate Draft'; }, 15000);
+    }
+});
+</script>
+{% endblock %}

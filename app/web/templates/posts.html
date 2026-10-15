@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Content Queue - Summer Content{% endblock %}
+{% block content %}
+<h1>Content Queue</h1>
+
+<form method="get" action="/posts" class="filter-form">
+    <div class="filter-row">
+        <select name="platform">
+            <option value="">All platforms</option>
+            {% for p in platforms %}
+            <option value="{{ p }}" {% if filters.platform == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+        </select>
+        <select name="status_filter">
+            <option value="">All statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <select name="campaign">
+            <option value="">All campaigns</option>
+            {% for c in campaigns %}
+            <option value="{{ c.slug }}" {% if filters.campaign == c.slug %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn">Filter</button>
+        {% if filters.platform or filters.status or filters.campaign %}
+        <a href="/posts" class="btn btn-sm">Clear</a>
+        {% endif %}
+    </div>
+</form>
+
+<p class="result-count">{{ total }} post{{ 's' if total != 1 }}</p>
+
+{% if posts %}
+<table class="table table-posts">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Preview</th>
+            <th>Platform</th>
+            <th>Type</th>
+            <th>Campaign</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Planned</th>
+            <th>Caption</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for post in posts %}
+        <tr>
+            <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
+            <td>
+                {% if post.asset and post.asset.storage_type != 'external_url' %}
+                <img src="/api/v1/assets/{{ post.asset.id }}/file" class="thumb" alt="" loading="lazy">
+                {% else %}
+                <div class="thumb thumb-placeholder"></div>
+                {% endif %}
+            </td>
+            <td>{{ post.platform }}</td>
+            <td>{{ post.content_type }}</td>
+            <td>{{ post.campaign }}</td>
+            <td><span class="badge badge-{{ post.status }}">{{ post.status }}</span></td>
+            <td>{{ post.created_at.strftime('%m-%d %H:%M') }}</td>
+            <td>{% if post.planned_publish_at %}{{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
+            <td class="truncate">{{ post.caption[:100] }}{% if post.caption|length > 100 %}…{% endif %}</td>
+            <td class="actions">
+                <a href="/posts/{{ post.id }}" class="btn btn-sm">Open</a>
+                {% if post.status == 'draft' %}
+                <form method="post" action="/posts/{{ post.id }}/approve" class="inline-form">
+                    <button type="submit" class="btn btn-sm btn-ok">Approve</button>
+                </form>
+                {% endif %}
+                {% if post.status not in ('archived', 'published') %}
+                <form method="post" action="/posts/{{ post.id }}/archive" class="inline-form"
+                    onsubmit="return confirm('Archive this post?')">
+                    <button type="submit" class="btn btn-sm btn-danger">Archive</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&platform={{ filters.platform }}&status_filter={{ filters.status }}&campaign={{ filters.campaign }}">&laquo; Prev</a>
+    {% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}
+    <a href="?page={{ page + 1 }}&platform={{ filters.platform }}&status_filter={{ filters.status }}&campaign={{ filters.campaign }}">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<p class="empty">No posts found. <a href="/generate">Generate your first post</a>.</p>
+{% endif %}
+{% endblock %}

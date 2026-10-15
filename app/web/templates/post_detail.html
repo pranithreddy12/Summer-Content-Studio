@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Post #{{ post.id }} - Summer Content{% endblock %}
+{% block content %}
+<h1>Post #{{ post.id }}</h1>
+
+<div class="status-banner status-{{ post.status }}">
+    {% if post.status == 'draft' %}Draft — approved/scheduled posts are NOT published automatically in Phase 1. Post manually.
+    {% elif post.status == 'approved' %}Approved — NOT published automatically in Phase 1. Post manually.
+    {% elif post.status == 'scheduled' %}Scheduled for {{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }} UTC — NOT published automatically in Phase 1. Post manually.
+    {% elif post.status == 'archived' %}Archived.
+    {% elif post.status == 'published' %}Published.
+    {% elif post.status == 'failed' %}Failed.
+    {% endif %}
+</div>
+
+<div class="post-detail">
+    <div class="post-main">
+        <div class="post-meta-bar">
+            <span class="badge badge-{{ post.status }}">{{ post.status }}</span>
+            <span>{{ post.platform }} · {{ post.content_type }}</span>
+            <span>Campaign: <strong>{{ post.campaign }}</strong></span>
+            <span>Source: {{ post.source }}</span>
+            {% if post.asset %}
+            <a href="/assets/{{ post.asset.id }}">Asset: {{ post.asset.filename }}</a>
+            {% endif %}
+        </div>
+
+        {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}
+        <div class="post-asset-preview">
+            <img src="/api/v1/assets/{{ post.asset.id }}/file" alt="{{ post.asset.filename }}">
+        </div>
+        {% elif post.asset and post.asset.media_type == 'video' and post.asset.storage_type != 'external_url' %}
+        <div class="post-asset-preview">
+            <video src="/api/v1/assets/{{ post.asset.id }}/file" controls preload="metadata"></video>
+        </div>
+        {% endif %}
+
+        <!-- Edit Form -->
+        {% if post.status not in ('archived', 'published') %}
+        <form method="post" action="/posts/{{ post.id }}" class="form-box">
+            <div class="form-group">
+                <label for="hook">Hook</label>
+                <input type="text" name="hook" id="hook" value="{{ post.hook }}" maxlength="500">
+            </div>
+
+            <div class="form-group">
+                <label for="caption">Caption <span id="char-count" class="char-count">{{ post.caption|length }}/2200</span></label>
+                <textarea name="caption" id="caption" rows="6" maxlength="2200" required>{{ post.caption }}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="hashtags">Hashtags (space or comma separated, without #)</label>
+                <input type="text" name="hashtags" id="hashtags"
+                    value="{{ post.hashtags | join(' ') }}"
+                    placeholder="halloween spooky autumn">
+            </div>
+
+            <div class="form-group">
+                <label for="call_to_action">Call to Action</label>
+                <input type="text" name="call_to_action" id="call_to_action" value="{{ post.call_to_action }}" maxlength="500">
+            </div>
+
+            <div class="form-group">
+                <label for="content_notes">Content Notes (for reviewer)</label>
+                <textarea name="content_notes" id="content_notes" rows="3" maxlength="2000">{{ post.content_notes }}</textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="campaign">Campaign</label>
+                    <select name="campaign" id="campaign">
+                        {% for c in campaigns %}
+                        <option value="{{ c.slug }}" {% if post.campaign == c.slug %}selected{% endif %}>{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="tags">Tags (comma-separated)</label>
+                    <input type="text" name="tags" id="tags"
+                        value="{{ post.tags | rejectattr('is_category') | map(attribute='name') | join(', ') }}">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="planned_publish_at">Planned Publish ({{ timezone }})</label>
+                    <input type="datetime-local" name="planned_publish_at" id="planned_publish_at"
+                        value="{{ post.planned_publish_at.strftime('%Y-%m-%dT%H:%M') if post.planned_publish_at else '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="asset_id">Asset</label>
+                    <select name="asset_id" id="asset_id">
+                        <option value="">None</option>
+                        {% if post.asset %}
+                        <option value="{{ post.asset.id }}" selected>{{ post.asset.filename }}</option>
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save</button>
+                {% if post.status == 'draft' %}
+                <button type="submit" formaction="/posts/{{ post.id }}/approve" class="btn btn-ok"
+                    onclick="return confirm('Approve this post?')">Approve</button>
+                {% endif %}
+                <button type="submit" formaction="/posts/{{ post.id }}/archive" class="btn btn-danger"
+                    onclick="return confirm('Archive this post?')">Archive</button>
+            </div>
+        </form>
+        {% elif post.status == 'archived' %}
+        <div class="banner banner-info">
+            <p>This post is archived. Content editing is disabled.</p>
+            <form method="post" action="/posts/{{ post.id }}/restore" class="inline-form">
+                <button type="submit" class="btn">Restore to Draft</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="post-sidebar">
+        <!-- Regenerate -->
+        {% if post.status != 'archived' %}
+        <div class="sidebar-box">
+            <h3>Generate Alternative</h3>
+            <form method="post" action="/posts/{{ post.id }}/regenerate">
+                <div class="form-group">
+                    <label for="regen_tone">Tone Variation</label>
+                    <input type="text" name="tone_variation" id="regen_tone" maxlength="200"
+                        placeholder="e.g. more teasing">
+                </div>
+                <div class="form-group">
+                    <label for="regen_instructions">Extra Instructions</label>
+                    <textarea name="extra_instructions" id="regen_instructions" rows="2" maxlength="500"
+                        placeholder="Any other guidance…"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="regen-btn">Generate Alternative</button>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Variants -->
+        <div class="sidebar-box">
+            <h3>Variants ({{ variants|length }})</h3>
+            {% if variants %}
+            {% for variant in variants %}
+            <div class="variant-card">
+                <div class="variant-meta">#{{ variant.id }} — {{ variant.created_at.strftime('%m-%d %H:%M') }}</div>
+                <p class="variant-caption">{{ variant.caption[:150] }}{% if variant.caption|length > 150 %}…{% endif %}</p>
+                <div class="variant-actions">
+                    {% if post.status not in ('archived', 'published') %}
+                    <form method="post" action="/posts/{{ post.id }}/variants/{{ variant.id }}/apply" class="inline-form">
+                        <button type="submit" class="btn btn-sm">Use this version</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty">No variants yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- Info -->
+        <div class="sidebar-box">
+            <h3>Info</h3>
+            <p><strong>Created:</strong> {{ post.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>
+            <p><strong>Updated:</strong> {{ post.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>
+            {% if post.approved_at %}
+            <p><strong>Approved:</strong> {{ post.approved_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>
+            {% endif %}
+            <p><strong>Profile:</strong> {{ post.profile.name if post.profile }}</p>
+        </div>
+    </div>
+</div>
+
+<p><a href="/posts">&larr; Back to Queue</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Live character count
+const caption = document.getElementById('caption');
+const charCount = document.getElementById('char-count');
+if (caption && charCount) {
+    caption.addEventListener('input', () => {
+        charCount.textContent = caption.value.length + '/2200';
+        charCount.classList.toggle('over-limit', caption.value.length > 2200);
+    });
+}
+</script>
+{% endblock %}

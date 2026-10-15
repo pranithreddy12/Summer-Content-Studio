@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.filename }} - Summer Content{% endblock %}
+{% block content %}
+<h1>{{ asset.filename }}</h1>
+
+<div class="asset-detail">
+    <div class="asset-preview">
+        {% if asset.media_type == 'image' and asset.storage_type != 'external_url' %}
+        <img src="/api/v1/assets/{{ asset.id }}/file" alt="{{ asset.filename }}">
+        {% elif asset.media_type == 'video' and asset.storage_type != 'external_url' %}
+        <video src="/api/v1/assets/{{ asset.id }}/file" controls preload="metadata"></video>
+        {% elif asset.storage_type == 'external_url' %}
+        <div class="placeholder-large">
+            <p>🔗 External Link</p>
+            <p><a href="{{ asset.source_ref }}" target="_blank" rel="noopener">Open in Dropbox</a></p>
+        </div>
+        {% else %}
+        <div class="placeholder-large">{{ asset.media_type }}</div>
+        {% endif %}
+    </div>
+
+    <div class="asset-info">
+        <form method="post" action="/assets/{{ asset.id }}" class="form-box">
+            <div class="form-group">
+                <label for="filename">Filename</label>
+                <input type="text" name="filename" id="filename" value="{{ asset.filename }}" maxlength="255" required>
+            </div>
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea name="description" id="description" rows="4">{{ asset.description }}</textarea>
+                <small>Describe what's actually in the image — Claude only knows what you write here.</small>
+            </div>
+            <div class="form-group">
+                <label for="tags">Tags (comma-separated)</label>
+                <input type="text" name="tags" id="tags"
+                    value="{{ asset.tags | map(attribute='name') | join(', ') }}">
+                <div class="tag-suggestions">
+                    {% for t in category_tags %}
+                    <button type="button" class="tag-suggest" data-tag="{{ t.name }}">{{ t.name }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="model_profile_id">Profile</label>
+                <select name="model_profile_id" id="model_profile_id">
+                    <option value="">None</option>
+                    {% for p in profiles %}
+                    <option value="{{ p.id }}" {% if asset.model_profile_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="is_active" value="true" {% if asset.is_active %}checked{% endif %}>
+                    Active (uncheck to archive)
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/generate?asset_id={{ asset.id }}" class="btn">Generate from this</a>
+        </form>
+
+        {% if not asset.is_active %}
+        <div class="banner banner-warning">This asset is archived.</div>
+        {% endif %}
+
+        <div class="metadata">
+            <p><strong>Type:</strong> {{ asset.media_type }} ({{ asset.mime_type or 'unknown' }})</p>
+            <p><strong>Storage:</strong> {{ asset.storage_type }}</p>
+            {% if asset.size_bytes %}
+            <p><strong>Size:</strong> {{ (asset.size_bytes / 1024 / 1024) | round(2) }} MB</p>
+            {% endif %}
+            <p><strong>Imported:</strong> {{ asset.imported_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>
+            {% if asset.local_relpath %}
+            <p><strong>Path:</strong> <code>{{ asset.local_relpath }}</code></p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<section class="section">
+    <h2>Posts Using This Asset</h2>
+    {% if posts %}
+    <table class="table">
+        <thead>
+            <tr><th>ID</th><th>Platform</th><th>Status</th><th>Caption</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+            {% for post in posts %}
+            <tr>
+                <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
+                <td>{{ post.platform }}</td>
+                <td><span class="badge badge-{{ post.status }}">{{ post.status }}</span></td>
+                <td class="truncate">{{ post.caption[:80] }}</td>
+                <td>{{ post.created_at.strftime('%Y-%m-%d') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No posts use this asset yet.</p>
+    {% endif %}
+</section>
+
+<p><a href="/assets">&larr; Back to Media Library</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.tag-suggest').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const input = document.getElementById('tags');
+        const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+        if (!current.includes(btn.dataset.tag)) {
+            current.push(btn.dataset.tag);
+            input.value = current.join(', ');
+        }
+    });
+});
+</script>
+{% endblock %}
