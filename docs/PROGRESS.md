@@ -92,3 +92,31 @@
 - Docs written: `docs/DEMO.md` (Halloween walkthrough), `docs/DECISIONS.md` (plan decisions + 12 build deviations + honest limitations), `docs/REFERENCE_RESEARCH.md` (no-scraping statement + human-fillable style-notes template).
 - Full final suite: **137 passed** (`python -m pytest`).
 - External blockers still open: real Anthropic credits for live generation smoke (criteria 5â€“7), real Halloween assets in the Dropbox folder (demo uses whatever is provided â€” descriptions written by humans only).
+
+## Frontend redesign — dark editorial + sidebar (2026-10-16)
+
+Full visual/structural redesign of the dashboard. No framework, no CDN, no new dependency — still hand-written CSS + tiny inline JS. Routes, form fields, ids, POST targets, PRG flow, flash handling and the signed-origin/CSRF and Basic-auth middleware are all unchanged, so the security posture (PLAN 14) holds.
+
+Files rewritten:
+- `app/web/static/style.css` — new design system (~850 lines): dark warm-charcoal surfaces, ember/amber accent, serif display headings (system `ui-serif`), CSS-grid shell, status/badge/chip/button/form/table/asset-grid/detail components, responsive breakpoints (1080 / 900). Replaces the old light warm palette.
+- `app/web/templates/base.html` — sidebar shell: brand mark, section nav (Overview/Media/Generate/Queue/Profiles) with inline SVG icons + active-state detection via `request.url.path.startswith(...)`, Phase-1 footnote, footer. Flash include and `{% block scripts %}` preserved.
+- All page templates restyled to a `page-head` (eyebrow + serif h1 + lede + action buttons) pattern: `overview`, `assets`, `asset_new`, `asset_detail`, `generate`, `posts`, `post_detail`, `profile`. Existing copy relied on by tests kept verbatim (e.g. "Claude only knows what you write here", "NOT published automatically", "Use this version", "Upload", status badges).
+- JS unchanged in behavior: content-type filter + submit-disable (generate), tab switch (asset-new), live char count (post detail), tag-suggest chips (asset detail), confirm() on archive.
+
+Verified: full suite **156 passed**. Live smoke on uvicorn (port 8001): `/`, `/assets`, `/assets/new`, `/assets/{id}`, `/generate`, `/posts`, `/posts/{id}`, `/profiles`, `/profiles/{id}`, `/static/style.css` all render; desktop (1440) + mobile (760) checked via Playwright screenshots. Fixed one responsive nit (grid `min-height` stretch left dead space under the collapsed sidebar — resolved with `align-content:start` + `min-height:0` on the 900px breakpoint).
+
+## Fix - dashboard MP4 upload rejected (2026-10-18)
+
+Report: uploading an MP4 at `/assets/new` returned `{"error":{"code":"validation_error","message":"body.file: Input should be a valid bytes"}}`.
+
+Cause: `POST /assets/new` (`app/web/routes.py`) declared the uploaded file as `file: Optional[bytes] = Form(None)`. FastAPI cannot decode a multipart file part into `bytes`, so request validation failed before the handler ran. The API endpoint `POST /api/v1/assets/upload` already used `UploadFile` and worked for MP4.
+
+Fix:
+- `app/web/routes.py` - `asset_create` now takes `file: Optional[UploadFile] = File(None)` and the service receives the `UploadFile`; also re-render the generate form with a human-readable message instead of the raw error dict.
+- `tests/test_assets.py` - added `test_dashboard_upload_mp4_via_form` (303 -> `/assets/{id}`, `media_type=video`, `mime_type=video/mp4`, `storage_type=upload`) and `test_dashboard_upload_png_via_form`.
+
+Verified:
+- `python -m pytest` -> 158 passed, exit 0.
+- Live uvicorn on a scratch port with a scratch DB: `POST /assets/new` with an MP4 -> `303 /assets/1?msg=Asset uploaded successfully&kind=ok`, detail page 200, `media_assets` row `('clip.mp4', 'video', 'video/mp4', 'upload', 96 bytes)`.
+
+Known limitation: the long-running dev server on port `127.0.0.1:8000` still serves the pre-fix module (its POST still returns the old 422). It must be restarted to pick up the fix; the socket is held by PID 31176, which `taskkill` reports as no longer existing, so a reboot may be needed to free port 8000 (port 8001+ are free).
