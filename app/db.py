@@ -29,12 +29,14 @@ def make_engine(url: Optional[str] = None) -> Engine:
 
     engine = create_engine(url, connect_args=connect_args)
 
-    # Enable foreign keys for SQLite
+    # Enable foreign keys + WAL for SQLite (web + worker share the file, PLAN §5)
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
     return engine

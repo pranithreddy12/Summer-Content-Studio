@@ -46,9 +46,18 @@ class PostStatus(str, enum.Enum):
     draft = "draft"
     approved = "approved"
     scheduled = "scheduled"
+    publishing = "publishing"      # transient claim state (Phase 2)
     published = "published"
+    sent_to_drafts = "sent_to_drafts"  # TikTok inbox: uploaded, human must post in app
     failed = "failed"
     archived = "archived"
+
+
+class AccountStatus(str, enum.Enum):
+    connected = "connected"
+    expired = "expired"
+    revoked = "revoked"
+    error = "error"
 
 
 class MediaType(str, enum.Enum):
@@ -191,6 +200,23 @@ class ContentPost(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
+    # ---- Phase 2 publishing columns ----
+    platform_account_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("platform_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    published_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    published_via: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # api | manual
+    external_post_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    external_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    publish_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True, index=True)
+    last_publish_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    tiktok_privacy_level: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    planned_by: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # planner | user
+    group_key: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
+    reminded_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+
     # Indexes
     __table_args__ = (
         Index("ix_content_posts_status_platform", "status", "platform"),
@@ -257,3 +283,175 @@ class GenerationLog(Base):
 
     # Relationships
     post: Mapped[Optional["ContentPost"]] = relationship("ContentPost", back_populates="generation_logs", lazy="selectin")
+
+
+# =========================================================================
+# Phase 2 models (PLAN_PHASE2 §6)
+# =========================================================================
+
+class PlatformAccount(Base):
+    """A connected platform account. Tokens are Fernet-encrypted at rest."""
+
+    __tablename__ = "platform_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(100), nullable=False)  # IG user id / TikTok open_id
+    username: Mapped[str] = mapped_column(String(100), nullable=False)  # display only
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    scopes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=AccountStatus.connected.value)
+    last_error: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)  # sanitized, no tokens
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("model_profile_id", "platform", name="uq_account_profile_platform"),
+    )
+
+    profile: Mapped["ModelProfile"] = relationship("ModelProfile", lazy="selectin")
+
+
+class OAuthState(Base):
+    """Single-use CSRF state for the OAuth connect flow. Deleted on use; >10 min invalid."""
+
+    __tablename__ = "oauth_states"
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    model_profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    code_verifier: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)  # PKCE
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+
+
+class PublishAttempt(Base):
+    """One publish attempt for a post. Append-only."""
+
+    __tablename__ = "publish_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("content_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("platform_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-based
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)  # schedule/manual/retry/dry_run
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    success: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)  # null while running + for dry runs
+    error_code: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # sanitized
+    platform_ref: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # container/publish id
+    http_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    post: Mapped["ContentPost"] = relationship("ContentPost", lazy="selectin")
+
+
+class PostMetric(Base):
+    """Instagram metric snapshot for a published post. Append-only."""
+
+    __tablename__ = "post_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("content_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fetched_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
+    likes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    comments: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    shares: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    views: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    saves: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    raw: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    post: Mapped["ContentPost"] = relationship("ContentPost", lazy="selectin")
+
+
+class Comment(Base):
+    """A platform comment on a published post. Reply drafts are human-sent (PLAN §10)."""
+
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("content_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    author_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    commented_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    reply_status: Mapped[str] = mapped_column(String(20), nullable=False, default="none")  # none/drafted/sent/ignored
+    reply_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    reply_external_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+
+    post: Mapped["ContentPost"] = relationship("ContentPost", lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("platform", "external_id", name="uq_comment_platform_external"),
+    )
+
+
+class WorkerHeartbeat(Base):
+    """Single row (id=1): the worker proves it is alive here."""
+
+    __tablename__ = "worker_heartbeats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    last_seen: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
+    last_result: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class PostingRule(Base):
+    """Weekly posting rule for one (profile, platform) — data, not env (PLAN §5/§6)."""
+
+    __tablename__ = "posting_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    posts_per_week: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    min_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    max_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    window_start: Mapped[str] = mapped_column(String(5), nullable=False, default="08:00")  # local HH:MM
+    window_end: Mapped[str] = mapped_column(String(5), nullable=False, default="21:00")
+    enforce_window: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    min_gap_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=180)
+    timezone: Mapped[str] = mapped_column(String(40), nullable=False, default="Europe/London")  # IANA
+    auto_topup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("model_profile_id", "platform", name="uq_rule_profile_platform"),
+    )
+
+    profile: Mapped["ModelProfile"] = relationship("ModelProfile", lazy="selectin")
+
+
+class NotificationLog(Base):
+    """Delivery log only: no message bodies with secrets (PLAN §6)."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_category: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)

@@ -93,17 +93,17 @@
 - Full final suite: **137 passed** (`python -m pytest`).
 - External blockers still open: real Anthropic credits for live generation smoke (criteria 5â€“7), real Halloween assets in the Dropbox folder (demo uses whatever is provided â€” descriptions written by humans only).
 
-## Frontend redesign — dark editorial + sidebar (2026-10-16)
+## Frontend redesign ï¿½ dark editorial + sidebar (2026-10-16)
 
-Full visual/structural redesign of the dashboard. No framework, no CDN, no new dependency — still hand-written CSS + tiny inline JS. Routes, form fields, ids, POST targets, PRG flow, flash handling and the signed-origin/CSRF and Basic-auth middleware are all unchanged, so the security posture (PLAN 14) holds.
+Full visual/structural redesign of the dashboard. No framework, no CDN, no new dependency ï¿½ still hand-written CSS + tiny inline JS. Routes, form fields, ids, POST targets, PRG flow, flash handling and the signed-origin/CSRF and Basic-auth middleware are all unchanged, so the security posture (PLAN 14) holds.
 
 Files rewritten:
-- `app/web/static/style.css` — new design system (~850 lines): dark warm-charcoal surfaces, ember/amber accent, serif display headings (system `ui-serif`), CSS-grid shell, status/badge/chip/button/form/table/asset-grid/detail components, responsive breakpoints (1080 / 900). Replaces the old light warm palette.
-- `app/web/templates/base.html` — sidebar shell: brand mark, section nav (Overview/Media/Generate/Queue/Profiles) with inline SVG icons + active-state detection via `request.url.path.startswith(...)`, Phase-1 footnote, footer. Flash include and `{% block scripts %}` preserved.
+- `app/web/static/style.css` ï¿½ new design system (~850 lines): dark warm-charcoal surfaces, ember/amber accent, serif display headings (system `ui-serif`), CSS-grid shell, status/badge/chip/button/form/table/asset-grid/detail components, responsive breakpoints (1080 / 900). Replaces the old light warm palette.
+- `app/web/templates/base.html` ï¿½ sidebar shell: brand mark, section nav (Overview/Media/Generate/Queue/Profiles) with inline SVG icons + active-state detection via `request.url.path.startswith(...)`, Phase-1 footnote, footer. Flash include and `{% block scripts %}` preserved.
 - All page templates restyled to a `page-head` (eyebrow + serif h1 + lede + action buttons) pattern: `overview`, `assets`, `asset_new`, `asset_detail`, `generate`, `posts`, `post_detail`, `profile`. Existing copy relied on by tests kept verbatim (e.g. "Claude only knows what you write here", "NOT published automatically", "Use this version", "Upload", status badges).
 - JS unchanged in behavior: content-type filter + submit-disable (generate), tab switch (asset-new), live char count (post detail), tag-suggest chips (asset detail), confirm() on archive.
 
-Verified: full suite **156 passed**. Live smoke on uvicorn (port 8001): `/`, `/assets`, `/assets/new`, `/assets/{id}`, `/generate`, `/posts`, `/posts/{id}`, `/profiles`, `/profiles/{id}`, `/static/style.css` all render; desktop (1440) + mobile (760) checked via Playwright screenshots. Fixed one responsive nit (grid `min-height` stretch left dead space under the collapsed sidebar — resolved with `align-content:start` + `min-height:0` on the 900px breakpoint).
+Verified: full suite **156 passed**. Live smoke on uvicorn (port 8001): `/`, `/assets`, `/assets/new`, `/assets/{id}`, `/generate`, `/posts`, `/posts/{id}`, `/profiles`, `/profiles/{id}`, `/static/style.css` all render; desktop (1440) + mobile (760) checked via Playwright screenshots. Fixed one responsive nit (grid `min-height` stretch left dead space under the collapsed sidebar ï¿½ resolved with `align-content:start` + `min-height:0` on the 900px breakpoint).
 
 ## Fix - dashboard MP4 upload rejected (2026-10-18)
 
@@ -120,3 +120,11 @@ Verified:
 - Live uvicorn on a scratch port with a scratch DB: `POST /assets/new` with an MP4 -> `303 /assets/1?msg=Asset uploaded successfully&kind=ok`, detail page 200, `media_assets` row `('clip.mp4', 'video', 'video/mp4', 'upload', 96 bytes)`.
 
 Known limitation: the long-running dev server on port `127.0.0.1:8000` still serves the pre-fix module (its POST still returns the old 422). It must be restarted to pick up the fix; the socket is held by PID 31176, which `taskkill` reports as no longer existing, so a reboot may be needed to free port 8000 (port 8001+ are free).
+
+## Phase 2 â€” B0 Close-out âœ… Complete (2026-10-21)
+- Baseline recorded: `python -m pytest` â†’ **193 passed** (matches PLAN_PHASE2 Â§0 exactly).
+- Outstanding ~46 uncommitted files committed in 4 chunks: (1) AI provider router + vision input (`a556823`), (2) random drafts + asset delete (`6e00bba`), (3) dashboard redesign (`8242a0e`), (4) Phase 2 plan v3 + docs (`8b7397f`).
+- Added `dist/` to `.gitignore`.
+- `git status` clean. Post-handover work is now in the repo; Phase 2 build starts from these commits.
+
+**Next:** B1 â€” Foundations (cryptography, PUBLISHING_MODE config, WAL, migration 0003, window service, mark-posted).

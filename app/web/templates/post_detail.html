@@ -69,8 +69,7 @@
       {% endif %}
 
       {% if post.status not in ('archived', 'published') %}
-      <form method="post" action="/posts/{{ post.id }}" class="form-box">
-        <div class="form-group">
+      <form method="post" action="/posts/{{ post.id }}" class="form-box">        <div class="form-group">
           <label for="hook">Hook</label>
           <input type="text" name="hook" id="hook" value="{{ post.hook }}" maxlength="500">
         </div>
@@ -152,6 +151,30 @@
 
     <div class="post-side">
       {% if post.status != 'archived' %}
+      <div class="sidebox" id="manual-post-panel">
+        <h3>Post it by hand</h3>
+        <div class="info-list">
+          <div><span class="k">Full caption</span></div>
+        </div>
+        <textarea id="full-caption" rows="5" readonly class="full-caption-box">{{ full_caption }}</textarea>
+        <div class="form-actions">
+          <button type="button" class="btn btn-sm" data-copy="#full-caption">Copy caption</button>
+          {% if post.asset and post.asset.storage_type != 'external_url' %}
+          <a href="/api/v1/assets/{{ post.asset.id }}/file" download="{{ post.asset.filename }}" class="btn btn-sm">Download media</a>
+          {% elif post.asset and post.asset.storage_type == 'external_url' %}
+          <a href="{{ post.asset.source_ref }}" target="_blank" rel="noopener" class="btn btn-sm">Open media</a>
+          {% endif %}
+        </div>
+        <form method="post" action="/posts/{{ post.id }}/posted" class="inline-form" style="margin-top:12px;">
+          <div class="form-group">
+            <label for="external_url">Posted URL (optional)</label>
+            <input type="url" name="external_url" id="external_url" placeholder="https://instagram.com/p/&hellip;" maxlength="500">
+          </div>
+          <button type="submit" class="btn btn-ok" id="mark-posted-btn" onclick="return confirm('Confirm you posted this content?')">Mark as posted</button>
+        </form>
+        <p class="small" style="margin-top:8px;margin-bottom:0;">When you click <strong>Mark as posted</strong> the post is recorded as published by you.</p>
+      </div>
+
       <div class="sidebox">
         <h3>Generate alternative</h3>
         <form method="post" action="/posts/{{ post.id }}/regenerate">
@@ -221,5 +244,22 @@ if (caption && charCount) {
     charCount.textContent = caption.value.length + '/2200';
   });
 }
+
+// Clipboard copy buttons (manual-post panel)
+document.querySelectorAll('[data-copy]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const source = document.querySelector(btn.dataset.copy);
+    if (!source) return;
+    try {
+      await navigator.clipboard.writeText(source.value);
+      const old = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    } catch (e) {
+      // clipboard unavailable: select the text instead
+      source.select();
+    }
+  });
+});
 </script>
 {% endblock %}

@@ -310,6 +310,12 @@ class PostOut(BaseSchema):
 # Error schemas
 # =========================================================================
 
+class MarkPostedRequest(BaseSchema):
+    """Body for POST /posts/{id}/mark-posted - external URL is optional."""
+
+    external_url: Optional[str] = Field(None, max_length=500)
+
+
 class ErrorDetail(BaseModel):
     code: str
     message: str

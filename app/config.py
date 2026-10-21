@@ -46,6 +46,75 @@ class Settings(BaseSettings):
     MAX_IMAGE_MB: int = 25
     MAX_VIDEO_MB: int = 500
 
+    # ---- Phase 2: publishing modes + platforms ----
+    # THE only publishing switch (PLAN_PHASE2 §2/§5). off / reminders / dry_run / live.
+    PUBLISHING_MODE: str = "off"
+    PUBLIC_BASE_URL: Optional[str] = None  # https:// URL; required for live + OAuth
+    TOKEN_ENCRYPTION_KEY: Optional[SecretStr] = None  # Fernet.generate_key() output
+    MEDIA_URL_SECRET: Optional[SecretStr] = None  # HMAC key for /m/{token} public media URLs
+
+    INSTAGRAM_APP_ID: Optional[str] = None
+    INSTAGRAM_APP_SECRET: Optional[SecretStr] = None
+    TIKTOK_CLIENT_KEY: Optional[str] = None
+    TIKTOK_CLIENT_SECRET: Optional[SecretStr] = None
+    TIKTOK_POST_MODE: str = "inbox"  # inbox | direct (direct = mock-only until audited)
+
+    # Worker
+    WORKER_INTERVAL_SECONDS: int = 60
+    PUBLISH_MAX_ATTEMPTS: int = 3
+    PLATFORM_TIMEOUT_SECONDS: float = 60.0
+
+    # Planner
+    AUTO_PLAN_ENABLED: bool = False
+    PLANNER_RUN_HOUR: int = 6
+    PLANNER_LEAD_MINUTES: int = 30
+    PLANNER_MAX_TOPUP_PER_DAY: int = 3
+
+    # Notifications (credentials live only in env - never logged/returned)
+    NOTIFY_PROVIDER: str = "none"  # none | telegram | ntfy | pushover
+    TELEGRAM_BOT_TOKEN: Optional[SecretStr] = None
+    TELEGRAM_CHAT_ID: Optional[str] = None
+    NTFY_SERVER: str = "https://ntfy.sh"
+    NTFY_TOPIC: Optional[SecretStr] = None
+    PUSHOVER_APP_TOKEN: Optional[SecretStr] = None
+    PUSHOVER_USER_KEY: Optional[SecretStr] = None
+
+    # Dropbox sync disk guard
+    MIN_FREE_DISK_GB: float = 2.0
+
+    @field_validator("PUBLISHING_MODE")
+    @classmethod    def validate_publishing_mode(cls, v: str) -> str:
+        if v not in ("off", "reminders", "dry_run", "live"):
+            raise ValueError("PUBLISHING_MODE must be 'off', 'reminders', 'dry_run' or 'live'")
+        return v
+
+    @field_validator("TIKTOK_POST_MODE")
+    @classmethod    def validate_tiktok_post_mode(cls, v: str) -> str:
+        if v not in ("inbox", "direct"):
+            raise ValueError("TIKTOK_POST_MODE must be 'inbox' or 'direct'")
+        return v
+
+    @field_validator("NOTIFY_PROVIDER")
+    @classmethod    def validate_notify_provider(cls, v: str) -> str:
+        if v not in ("none", "telegram", "ntfy", "pushover"):
+            raise ValueError("NOTIFY_PROVIDER must be 'none', 'telegram', 'ntfy' or 'pushover'")
+        return v
+
+    @field_validator("PUBLIC_BASE_URL")
+    @classmethod    def validate_public_base_url(cls, v: Optional[str]) -> Optional[str]:
+        if v in (None, ""):
+            return None
+        v = str(v).rstrip("/")
+        if not v.startswith("https://"):
+            raise ValueError("PUBLIC_BASE_URL must start with https://")
+        return v
+
+    @field_validator("PLANNER_RUN_HOUR", "PLANNER_LEAD_MINUTES")
+    @classmethod    def validate_non_negative_int(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("must be >= 0")
+        return v
+
     @field_validator("MEDIA_SYNC_DIR", mode="before")
     @classmethod
     def _coerce_empty_sync_dir(cls, v):
@@ -120,6 +189,26 @@ class Settings(BaseSettings):
             and self.DASHBOARD_PASSWORD.get_secret_value() != ""
         )
 
+    @property
+    def notify_configured(self) -> bool:
+        """True when the chosen provider has its credentials."""
+        if self.NOTIFY_PROVIDER == "telegram":
+            return self.TELEGRAM_BOT_TOKEN is not None and bool(self.TELEGRAM_CHAT_ID)
+        if self.NOTIFY_PROVIDER == "ntfy":
+            return self.NTFY_TOPIC is not None
+        if self.NOTIFY_PROVIDER == "pushover":
+            return self.PUSHOVER_APP_TOKEN is not None and self.PUSHOVER_USER_KEY is not None
+        return False
+
+    @property
+    def live_publishing_ready(self) -> bool:
+        """Prerequisites for PUBLISHING_MODE=live (worker refuses without them, PLAN §2)."""
+        return (
+            self.PUBLIC_BASE_URL is not None
+            and self.TOKEN_ENCRYPTION_KEY is not None
+            and self.MEDIA_URL_SECRET is not None
+        )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
@@ -130,3 +219,11 @@ def get_settings() -> Settings:
 def clear_settings_cache() -> None:
     """Clear the settings cache (useful for testing)."""
     get_settings.cache_clear()
+
+
+def publishing_mode() -> str:
+    """The one publishing switch (PLAN_PHASE2 rule 12).
+
+    Every code path that could post checks the mode through this helper.
+    """
+    return get_settings().PUBLISHING_MODE

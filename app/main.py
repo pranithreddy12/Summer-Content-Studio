@@ -221,11 +221,33 @@ def create_app() -> FastAPI:
         except Exception:
             pass
 
+        worker_last_seen = None
+        worker_ok = False
+        try:
+            from datetime import datetime, timezone as _tz
+
+            from sqlalchemy import select as _select
+            from sqlalchemy.orm import Session as _Session
+
+            from app.models import WorkerHeartbeat
+
+            with _Session(bind=engine, expire_on_commit=False) as hb_session:
+                hb = hb_session.execute(_select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
+                if hb is not None:
+                    worker_last_seen = hb.last_seen.replace(tzinfo=_tz.utc).isoformat()
+                    age = (datetime.now(_tz.utc) - hb.last_seen.replace(tzinfo=_tz.utc)).total_seconds()
+                    worker_ok = age < 300  # 5 min (PLAN §5)
+        except Exception:
+            pass  # table may not exist yet on a fresh Phase-1 DB
+
         return {
             "status": "ok" if db_ok else "degraded",
             "database": "ok" if db_ok else "error",
             "claude_configured": settings.claude_configured,
             "mistral_configured": settings.mistral_configured,
+            "publishing_mode": settings.PUBLISHING_MODE,
+            "worker_last_seen": worker_last_seen,
+            "worker_ok": worker_ok,
             "version": "0.1.0",
         }
 

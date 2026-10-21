@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import ContentPost
-from app.schemas import PostCreate, PostUpdate, PostOut, VariantOut
+from app.schemas import PostCreate, PostUpdate, PostOut, VariantOut, MarkPostedRequest
 from app.services import AppError
 from app.services.posts import (
     list_posts, get_post, create_post, update_post,
-    approve_post, archive_post, restore_post, apply_variant,
+    approve_post, archive_post, restore_post, apply_variant, mark_posted,
 )
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -156,6 +156,16 @@ async def restore_post_endpoint(post_id: int, db: Session = Depends(get_db)):
     """Restore an archived post to draft."""
     try:
         restore_post(db, post_id)
+    except AppError:
+        raise
+    return get_post(db, post_id)
+
+
+@router.post("/{post_id}/mark-posted", response_model=PostOut)
+async def mark_posted_endpoint(post_id: int, req: MarkPostedRequest, db: Session = Depends(get_db)):
+    """The user asserts they posted the content by hand (published_via='manual')."""
+    try:
+        mark_posted(db, post_id, external_url=req.external_url)
     except AppError:
         raise
     return get_post(db, post_id)

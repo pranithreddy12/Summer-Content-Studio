@@ -4,8 +4,10 @@ annotated-types==0.8.0
 anthropic==1.14.0
 anyio==4.15.1
 certifi==2026.7.22
+cffi==2.1.1
 click==8.5.0
 colorama==0.4.6
+cryptography==50.0.2
 docstring_parser==0.18.0
 fastapi==0.143.1
 h11==0.16.0
@@ -17,15 +19,16 @@ httpx2==2.13.1
 idna==3.20
 iniconfig==2.3.1
 Jinja2==3.1.6
-jiter==0.17.0
+jiter @ file:///C:/Users/prani/AppData/Local/Temp/jiter_dl/jiter-0.17.0-cp314-cp314-win_amd64.whl#sha256=ac3c6ee3264d6f5c44c617f90bc7e8b9e1587e7d6708c9d8f811cb65582ee312
 Mako==1.4.3
 MarkupSafe==3.0.4
 opentelemetry-api==1.45.1
 packaging==26.3
 pluggy==1.6.0
+pycparser==3.11
 pydantic==2.14.1
 pydantic-settings==2.16.0
-pydantic_core==2.50.1
+pydantic_core @ file:///C:/Users/prani/AppData/Local/Temp/pc_wheel_download/pydantic_core-2.50.1-cp314-cp314-win_amd64.whl#sha256=d32f3acc081cc3923386d88f422cde8892335e95f034e0104bb4cf9310d9915f
 Pygments==2.21.0
 pytest==9.1.1
 python-dotenv==1.2.4

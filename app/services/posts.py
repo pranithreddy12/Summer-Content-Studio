@@ -26,9 +26,64 @@ TRANSITIONS = {
     ("archive", "draft"): "archived",
     ("archive", "approved"): "archived",
     ("archive", "scheduled"): "archived",
-    ("archive", "failed"): "archived",
+    ("archive", "failed"): "archived",  # Phase 2: failed is archivable
     ("restore", "archived"): "draft",
+    # --- Phase 2 (PLAN_PHASE2 §8) ---
+    # Service-only transitions (claim/publish_success/inbox_success/publish_retry/
+    # publish_fail) are applied by services/publishing.py via apply_transition().
+    ("claim", "approved"): "publishing",
+    ("claim", "scheduled"): "publishing",
+    ("publish_success", "publishing"): "published",       # published_via='api'
+    ("inbox_success", "publishing"): "sent_to_drafts",     # TikTok inbox mode
+    ("mark_posted", "approved"): "published",              # user asserts they posted it
+    ("mark_posted", "scheduled"): "published",
+    ("mark_posted", "sent_to_drafts"): "published",
+    ("publish_retry", "publishing"): "scheduled",          # next_attempt_at set
+    ("publish_fail", "publishing"): "failed",
+    ("retry", "failed"): "scheduled",                      # resets attempt count
+    ("edit", "failed"): "draft",
+    ("plan", "approved"): "scheduled",                     # planner sets planned_by='planner'
 }
+
+
+def apply_transition(db: Session, post: ContentPost, action: str, commit: bool = True) -> str:
+    """Apply a transition by action name and return the new status.
+
+    Single choke-point for status changes (services only; no endpoint accepts
+    `status` in a body).
+    """
+    new_status = _validate_transition(post.status, action)
+    post.status = new_status
+    return new_status
+
+
+def mark_posted(db: Session, post_id: int, external_url: Optional[str] = None) -> ContentPost:
+    """User asserts they posted the content by hand (PLAN §8).
+
+    Works in every PUBLISHING_MODE; the human is the source of truth.
+    Records published_via='manual' and published_at = now (the click).
+    """
+    post = get_post(db, post_id)
+    if not post:
+        raise AppError("not_found", "Post not found", status=404)
+
+    if external_url is not None:
+        if not external_url.startswith("https://"):
+            raise AppError("validation_error", "external_url must start with https://", status=422)
+        if len(external_url) > 500:
+            raise AppError("validation_error", "external_url too long", status=422)
+
+    new_status = apply_transition(db, post, "mark_posted")
+    post.published_at = utcnow()
+    post.published_via = "manual"
+    if external_url:
+        post.external_url = external_url
+    post.next_attempt_at = None
+    post.updated_at = utcnow()
+
+    db.commit()
+    db.refresh(post)
+    return post
 
 
 def _validate_transition(current_status: str, action: str) -> str:
@@ -248,6 +303,9 @@ def update_post(db: Session, post_id: int, req: PostUpdate) -> ContentPost:
     # Cannot edit archived or published posts
     if post.status in (PostStatus.archived.value, PostStatus.published.value):
         raise AppError("invalid_transition", f"Cannot edit a post with status '{post.status}'.", status=409)
+    # A post claimed by the publisher is untouchable until the worker resolves it
+    if post.status == PostStatus.publishing.value:
+        raise AppError("invalid_transition", "Post is being published; try again shortly.", status=409)
 
     update_data = req.model_dump(exclude_unset=True)
 
@@ -295,6 +353,9 @@ def update_post(db: Session, post_id: int, req: PostUpdate) -> ContentPost:
             raise AppError("validation_error", "planned_publish_at cannot be in the past", status=422)
 
         post.planned_publish_at = planned
+        if planned is not None:
+            # A user-set time is never moved by the planner (PLAN §8)
+            post.planned_by = "user"
 
         # Transition rules for planned_publish_at
         if post.status == PostStatus.approved.value and planned is not None:
@@ -311,8 +372,11 @@ def update_post(db: Session, post_id: int, req: PostUpdate) -> ContentPost:
     for field, value in update_data.items():
         setattr(post, field, value)
 
-    # Content change resets approval
-    if content_changed and post.status in (PostStatus.approved.value, PostStatus.scheduled.value):
+    # Content change resets approval (approved/scheduled -> draft) and lets a
+    # failed post be edited back into the working queue (PLAN §8)
+    if content_changed and post.status in (
+        PostStatus.approved.value, PostStatus.scheduled.value, PostStatus.failed.value
+    ):
         post.status = PostStatus.draft.value
         post.approved_at = None
 

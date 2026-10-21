@@ -20,9 +20,10 @@ from app.schemas import GenerateRequest, PostCreate, PostUpdate, RandomDraftRequ
 from app.security import generation_rate_limit, get_or_create_tags, safe_relpath
 from app.services.posts import (
     list_posts, get_post, approve_post, archive_post, restore_post,
-    apply_variant, stats, update_post
+    apply_variant, stats, update_post, mark_posted
 )
 from app.services.generation import generate_draft, regenerate
+from app.services.publishing import render_caption
 from app.services.random_draft import eligible_assets
 
 router = APIRouter()
@@ -613,6 +614,7 @@ async def post_detail(
         "campaigns": campaigns,
         "all_tags": all_tags,
         "timezone": get_settings().APP_TIMEZONE,
+        "full_caption": render_caption(post),
         "flash": get_flash(request),
     })
 
@@ -717,6 +719,30 @@ async def post_archive(
     try:
         archive_post(db, post_id)
         return redirect_with_flash("/posts", "Post archived")
+    except HTTPException as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+    except Exception as e:
+        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+
+
+@router.post("/posts/{post_id}/posted")
+async def post_marked_posted(
+    request: Request,
+    post_id: int,
+    external_url: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Mark as posted: the human asserts they posted the content by hand.
+
+    Works in every PUBLISHING_MODE (PLAN §8) - the human is the source of truth.
+    """
+    from app.services import AppError
+
+    try:
+        mark_posted(db, post_id, external_url=external_url or None)
+        return redirect_with_flash(f"/posts/{post_id}", "Marked as posted - great work")
+    except AppError as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.message, "error")
     except HTTPException as e:
         return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
     except Exception as e:
