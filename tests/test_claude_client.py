@@ -235,7 +235,7 @@ class TestNotConfigured:
         import os
         from app.config import clear_settings_cache
 
-        old_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ["ANTHROPIC_API_KEY"] = ""
         clear_settings_cache()
 
         try:
@@ -248,6 +248,5 @@ class TestNotConfigured:
             assert exc.value.category == "not_configured"
             assert exc.value.http_status == 503
         finally:
-            if old_key is not None:
-                os.environ["ANTHROPIC_API_KEY"] = old_key
+            os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-SECRET123"
             clear_settings_cache()

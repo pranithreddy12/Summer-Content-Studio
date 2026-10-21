@@ -1,5 +1,6 @@
 """Claude API client - wraps the Anthropic SDK with error mapping."""
 
+import base64
 import json
 import logging
 import time
@@ -17,10 +18,13 @@ logger = logging.getLogger("app.services.claude_client")
 class GenerationError(Exception):
     """Generation error with category and HTTP status."""
 
-    def __init__(self, category: str, message: str, http_status: int):
+    def __init__(self, category: str, message: str, http_status: int,
+                 provider: Optional[str] = None, model: Optional[str] = None):
         self.category = category
         self.message = message
         self.http_status = http_status
+        self.provider = provider  # set by the provider router; used for GenerationLog
+        self.model = model
         super().__init__(message)
 
 
@@ -32,6 +36,7 @@ class ClaudeResult:
     input_tokens: Optional[int]
     output_tokens: Optional[int]
     request_id: Optional[str]
+    provider: str = "anthropic"
 
 
 # JSON schema for structured output
@@ -53,6 +58,8 @@ GENERATED_CONTENT_SCHEMA = {
 class ClaudeClient:
     """Wraps Anthropic SDK with error mapping and validation."""
 
+    provider = "anthropic"
+
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client: Optional[anthropic.Anthropic] = None
@@ -68,7 +75,7 @@ class ClaudeClient:
     def is_configured(self) -> bool:
         return self.client is not None
 
-    def generate(self, system: str, user: str) -> ClaudeResult:
+    def generate(self, system: str, user: str, images=None) -> ClaudeResult:
         """
         Call Claude with structured output (JSON schema).
 
@@ -82,13 +89,20 @@ class ClaudeClient:
             )
 
         start_time = time.time()
+        content = user
+        if images:  # image blocks first, then the text brief
+            content = [
+                *({"type": "image", "source": {"type": "base64", "media_type": i.media_type,
+                                               "data": base64.b64encode(i.data).decode()}} for i in images),
+                {"type": "text", "text": user},
+            ]
 
         try:
             response = self.client.messages.create(
                 model=self.settings.CLAUDE_MODEL,
                 max_tokens=self.settings.CLAUDE_MAX_TOKENS,
                 system=system,
-                messages=[{"role": "user", "content": user}],
+                messages=[{"role": "user", "content": content}],
                 output_config={
                     "effort": self.settings.CLAUDE_EFFORT,
                     "format": {"type": "json_schema", "schema": GENERATED_CONTENT_SCHEMA},

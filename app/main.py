@@ -225,6 +225,7 @@ def create_app() -> FastAPI:
             "status": "ok" if db_ok else "degraded",
             "database": "ok" if db_ok else "error",
             "claude_configured": settings.claude_configured,
+            "mistral_configured": settings.mistral_configured,
             "version": "0.1.0",
         }
 

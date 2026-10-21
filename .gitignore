@@ -18,4 +18,5 @@ pytest_status.txt
 freebuff_memory
 .opencode/
 opencode_memory.md
-.codeflow/
+.codeflow/# build artifacts
+dist/

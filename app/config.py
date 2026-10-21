@@ -28,11 +28,35 @@ class Settings(BaseSettings):
     CLAUDE_TIMEOUT_SECONDS: float = 120.0
     CLAUDE_MAX_RETRIES: int = 2
 
+    # Mistral (alternative / fallback provider)
+    MISTRAL_API_KEY: Optional[SecretStr] = None
+    MISTRAL_MODEL: str = "ministral-8b-latest"
+    MISTRAL_MAX_TOKENS: int = 2048
+    # auto = Anthropic if configured (Mistral as fallback on provider failure), else Mistral
+    LLM_PROVIDER: str = "auto"
+
+    # Image input: show the AI the asset (images; frames from videos via ffmpeg)
+    ENABLE_IMAGE_INPUT: bool = True
+    FFMPEG_PATH: Optional[str] = None  # default: ffmpeg on PATH
+    MAX_FRAMES: int = 3
+
     # Media
     MEDIA_UPLOAD_DIR: Path = Path("./data/media")
     MEDIA_SYNC_DIR: Optional[Path] = None
     MAX_IMAGE_MB: int = 25
     MAX_VIDEO_MB: int = 500
+
+    @field_validator("MEDIA_SYNC_DIR", mode="before")
+    @classmethod
+    def _coerce_empty_sync_dir(cls, v):
+        # Treat an explicitly-empty value as unset so the sync endpoint can
+        # report MEDIA_SYNC_DIR not configured.
+        if v is None:
+            return None
+        s = str(v).strip()
+        if s == "" or s == ".":
+            return None
+        return Path(s)
 
     # Timezone for display (IANA zone name)
     APP_TIMEZONE: str = "UTC"
@@ -50,6 +74,13 @@ class Settings(BaseSettings):
     def validate_env(cls, v: str) -> str:
         if v not in ("development", "production"):
             raise ValueError("APP_ENV must be 'development' or 'production'")
+        return v
+
+    @field_validator("LLM_PROVIDER")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        if v not in ("auto", "anthropic", "mistral"):
+            raise ValueError("LLM_PROVIDER must be 'auto', 'anthropic', or 'mistral'")
         return v
 
     @field_validator("CLAUDE_EFFORT")
@@ -74,6 +105,10 @@ class Settings(BaseSettings):
     def claude_configured(self) -> bool:
         """Check if Anthropic API key is configured."""
         return self.ANTHROPIC_API_KEY is not None and self.ANTHROPIC_API_KEY.get_secret_value() != ""
+
+    @property
+    def mistral_configured(self) -> bool:
+        return self.MISTRAL_API_KEY is not None and self.MISTRAL_API_KEY.get_secret_value() != ""
 
     @property
     def basic_auth_enabled(self) -> bool:

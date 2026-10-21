@@ -317,3 +317,22 @@ class ErrorDetail(BaseModel):
 
 class ErrorOut(BaseModel):
     error: ErrorDetail
+
+
+class RandomDraftRequest(BaseSchema):
+    """Pick random unused library assets and draft one post for each (max 5)."""
+    platform: Platform
+    campaign: str = Field("auto", min_length=1, max_length=60)  # "auto" = asset's category tag, else lifestyle
+    count: int = Field(1, ge=1, le=5)
+    media_type: Optional[MediaType] = None
+    tag: Optional[str] = Field(None, max_length=60)
+    include_used: bool = False
+    profile_id: Optional[int] = None
+    seasonal_context: str = Field("", max_length=500)
+    batch_key: Optional[str] = Field(None, max_length=40)  # makes a resubmitted batch idempotent
+
+
+class RandomDraftOut(BaseSchema):
+    posts: List[PostOut]
+    errors: List[Dict[str, Any]] = []
+    available: int

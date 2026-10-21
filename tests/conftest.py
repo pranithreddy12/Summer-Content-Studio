@@ -24,6 +24,9 @@ def settings(tmp_path_factory) -> Generator:
     os.environ["MEDIA_UPLOAD_DIR"] = str(tmp_dir / "media")
     os.environ["MEDIA_SYNC_DIR"] = str(tmp_dir / "sync")
     os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-SECRET123"
+    # Never let a developer's real Mistral key (or provider override) leak into tests
+    os.environ["MISTRAL_API_KEY"] = ""
+    os.environ["LLM_PROVIDER"] = "auto"
     os.environ["APP_ENV"] = "development"
     os.environ["APP_TIMEZONE"] = "UTC"
     os.environ["DASHBOARD_USERNAME"] = ""
@@ -38,7 +41,7 @@ def settings(tmp_path_factory) -> Generator:
     yield get_settings()
 
     clear_settings_cache()
-    for key in ["DATABASE_URL", "MEDIA_UPLOAD_DIR", "MEDIA_SYNC_DIR", "ANTHROPIC_API_KEY"]:
+    for key in ["DATABASE_URL", "MEDIA_UPLOAD_DIR", "MEDIA_SYNC_DIR", "ANTHROPIC_API_KEY", "MISTRAL_API_KEY", "LLM_PROVIDER"]:
         os.environ.pop(key, None)
 
 
@@ -100,8 +103,9 @@ class FakeClaude:
     def is_configured(self):
         return True
 
-    def generate(self, system: str, user: str):
+    def generate(self, system: str, user: str, images=None):
         self.calls += 1
+        self.last_system, self.last_user, self.last_images = system, user, images or []
         if self.error:
             raise self.error
         if self.result is None:

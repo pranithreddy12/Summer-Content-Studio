@@ -1,0 +1,20 @@
+Write one {{ platform }} {{ content_type }} post.
+
+<campaign>{{ campaign_name }}{% if seasonal_context %} — {{ seasonal_context }}{% endif %}</campaign>
+
+<media>
+{% if asset %}Type: {{ asset.media_type }}
+Description (written by the team, the only reliable info about the media): {{ asset.description or "No description provided." }}{% else %}No media attached (text-first post).{% endif %}
+{% if image_count %}Attached: {{ image_count }} image(s) from this media.
+{% endif %}{% if asset_context %}Extra context: {{ asset_context }}{% endif %}
+</media>
+{% if tone_variation %}<tone_variation>{{ tone_variation }}</tone_variation>{% endif %}
+{% if cta_request %}<requested_cta>{{ cta_request }}</requested_cta>{% endif %}
+{% if extra_restrictions %}<extra_restrictions>{% for r in extra_restrictions %}
+- {{ r }}{% endfor %}
+</extra_restrictions>{% endif %}
+{% if avoid_repeating %}<avoid_repeating>
+Write a clearly different alternative to this existing caption:
+{{ avoid_repeating }}
+</avoid_repeating>{% endif %}
+{% if extra_instructions %}<extra_instructions>{{ extra_instructions }}</extra_instructions>{% endif %}

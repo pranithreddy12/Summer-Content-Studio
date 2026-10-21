@@ -9,7 +9,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 from app.models import ModelProfile, MediaAsset, Platform, ContentType
 from app.prompts.platforms import PLATFORM_RULES, GENERAL_PLATFORM_RULES
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"  # v2 adds image-aware accuracy rules (v1 files kept for history)
 
 # Jinja2 environment for prompt templates (autoescape off for prompts)
 _prompt_env = Environment(
@@ -23,9 +23,10 @@ def render_system(
     profile: ModelProfile,
     platform: Platform,
     content_type: ContentType,
+    image_count: int = 0,
 ) -> str:
     """Render the system prompt."""
-    template = _prompt_env.get_template("system_v1.j2")
+    template = _prompt_env.get_template(f"system_{PROMPT_VERSION}.j2")
 
     platform_rule = PLATFORM_RULES.get(platform, {}).get(content_type, "")
 
@@ -35,6 +36,7 @@ def render_system(
         content_type=content_type.value,
         platform_rule=platform_rule,
         general_rules=GENERAL_PLATFORM_RULES,
+        image_count=image_count,
     )
 
 
@@ -50,9 +52,10 @@ def render_user(
     extra_restrictions: Optional[list[str]] = None,
     avoid_repeating: str = "",
     extra_instructions: str = "",
+    image_count: int = 0,
 ) -> str:
     """Render the user prompt."""
-    template = _prompt_env.get_template("user_v1.j2")
+    template = _prompt_env.get_template(f"user_{PROMPT_VERSION}.j2")
 
     return template.render(
         platform=platform.value,
@@ -66,4 +69,5 @@ def render_user(
         extra_restrictions=extra_restrictions or [],
         avoid_repeating=avoid_repeating,
         extra_instructions=extra_instructions,
+        image_count=image_count,
     )

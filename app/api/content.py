@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_claude_client
 from app.db import get_db
-from app.schemas import GenerateRequest, RegenerateRequest, PostOut, VariantOut
+from app.schemas import GenerateRequest, RandomDraftOut, RandomDraftRequest, RegenerateRequest, PostOut, VariantOut
 from app.security import generation_rate_limit
 from app.services.generation import generate_draft, regenerate
+from app.services.random_draft import generate_random_drafts
 
 router = APIRouter(prefix="/content", tags=["content"])
 
@@ -73,3 +74,15 @@ async def regenerate_content(
     generation_rate_limit(request)
     variant = regenerate(db, post_id, req, client)
     return variant
+
+
+@router.post("/generate-random", response_model=RandomDraftOut, status_code=status.HTTP_201_CREATED)
+def generate_random(
+    request: Request,
+    req: RandomDraftRequest,
+    db: Session = Depends(get_db),
+    client=Depends(get_claude_client),
+):
+    """Pick random unused assets (uploaded/synced) and generate a draft for each. Drafts only - never published."""
+    generation_rate_limit(request)
+    return generate_random_drafts(db, req, client)

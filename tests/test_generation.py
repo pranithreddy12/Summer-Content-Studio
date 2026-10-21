@@ -209,7 +209,7 @@ def test_generate_valid_draft(client, fake_claude):
     with session_scope() as db:
         log = db.execute(select(GenerationLog).where(GenerationLog.success == True)).scalar_one()
         assert log.purpose == "generate"
-        assert log.prompt_version == "v1"
+        assert log.prompt_version == "v2"
         assert log.model_profile_id == 1
 
 
@@ -268,7 +268,7 @@ def test_generate_missing_api_key_503(client, monkeypatch):
     from app.config import clear_settings_cache
     from app.api.dependencies import get_claude_client, reset_claude_client_cache
 
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     clear_settings_cache()
     reset_claude_client_cache()
 

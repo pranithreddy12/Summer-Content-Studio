@@ -19,7 +19,9 @@ from app.prompts import PROMPT_VERSION, render_system, render_user
 from app.prompts.platforms import HASHTAG_CAP
 from app.schemas import GeneratedContent, GenerateRequest, RegenerateRequest
 from app.security import get_or_create_tags
+from app.config import get_settings
 from app.services.claude_client import ClaudeClient, GenerationError
+from app.services.frames import get_asset_images
 from app.services.posts import get_post
 
 logger = logging.getLogger("app.services.generation")
@@ -120,8 +122,10 @@ def generate_draft(
         raise HTTPException(status_code=422, detail=f"Campaign '{req.campaign}' not found")
 
     # 3. Render prompts
-    system = render_system(profile, req.platform, req.content_type)
+    images = get_asset_images(asset, get_settings())
+    system = render_system(profile, req.platform, req.content_type, image_count=len(images))
     user = render_user(
+        image_count=len(images),
         platform=req.platform,
         content_type=req.content_type,
         campaign_name=campaign_tag.name,
@@ -136,7 +140,7 @@ def generate_draft(
     # 4. Call Claude
     start_time = time.time()
     try:
-        result = client.generate(system, user)
+        result = client.generate(system, user, images=images)
     except GenerationError as e:
         duration_ms = int((time.time() - start_time) * 1000)
         # Log failure
@@ -144,8 +148,8 @@ def generate_draft(
             model_profile_id=req.profile_id,
             media_asset_id=req.asset_id,
             post_id=None,
-            provider="anthropic",
-            model=client.settings.CLAUDE_MODEL,
+            provider=getattr(e, "provider", None) or "anthropic",
+            model=getattr(e, "model", None) or client.settings.CLAUDE_MODEL,
             prompt_version=PROMPT_VERSION,
             purpose="generate",
             success=False,
@@ -173,7 +177,7 @@ def generate_draft(
             model_profile_id=req.profile_id,
             media_asset_id=req.asset_id,
             post_id=None,
-            provider="anthropic",
+            provider=getattr(result, "provider", "anthropic"),
             model=result.model,
             prompt_version=PROMPT_VERSION,
             purpose="generate",
@@ -222,7 +226,7 @@ def generate_draft(
         model_profile_id=req.profile_id,
         media_asset_id=req.asset_id,
         post_id=None,
-        provider="anthropic",
+        provider=getattr(result, "provider", "anthropic"),
         model=result.model,
         prompt_version=PROMPT_VERSION,
         purpose="generate",
@@ -302,6 +306,7 @@ def regenerate(
     asset = None
     if post.media_asset_id:
         asset = db.get(MediaAsset, post.media_asset_id)
+    images = get_asset_images(asset, get_settings())
 
     # Determine campaign tag name
     campaign_tag = None
@@ -326,6 +331,7 @@ def regenerate(
     if post.generation_input:
         gi = post.generation_input
         user = render_user(
+            image_count=len(images),
             platform=platform,
             content_type=content_type,
             campaign_name=campaign_tag.name,
@@ -340,6 +346,7 @@ def regenerate(
         )
     else:
         user = render_user(
+            image_count=len(images),
             platform=platform,
             content_type=content_type,
             campaign_name=campaign_tag.name,
@@ -353,20 +360,20 @@ def regenerate(
             extra_instructions=req.extra_instructions,
         )
 
-    system = render_system(profile, platform, content_type)
+    system = render_system(profile, platform, content_type, image_count=len(images))
 
     # Call Claude
     start_time = time.time()
     try:
-        result = client.generate(system, user)
+        result = client.generate(system, user, images=images)
     except GenerationError as e:
         duration_ms = int((time.time() - start_time) * 1000)
         log = GenerationLog(
             model_profile_id=post.model_profile_id,
             media_asset_id=post.media_asset_id,
             post_id=post.id,
-            provider="anthropic",
-            model=client.settings.CLAUDE_MODEL,
+            provider=getattr(e, "provider", None) or "anthropic",
+            model=getattr(e, "model", None) or client.settings.CLAUDE_MODEL,
             prompt_version=PROMPT_VERSION,
             purpose="regenerate",
             success=False,
@@ -394,7 +401,7 @@ def regenerate(
             model_profile_id=post.model_profile_id,
             media_asset_id=post.media_asset_id,
             post_id=post.id,
-            provider="anthropic",
+            provider=getattr(result, "provider", "anthropic"),
             model=result.model,
             prompt_version=PROMPT_VERSION,
             purpose="regenerate",
@@ -418,7 +425,7 @@ def regenerate(
         model_profile_id=post.model_profile_id,
         media_asset_id=post.media_asset_id,
         post_id=post.id,
-        provider="anthropic",
+        provider=getattr(result, "provider", "anthropic"),
         model=result.model,
         prompt_version=PROMPT_VERSION,
         purpose="regenerate",
