@@ -162,6 +162,49 @@ def test_upload_rejects_unsupported_extension(client):
 # PATCH / archive
 # =========================================================================
 
+# =========================================================================
+# Dashboard upload form (/assets/new)
+# =========================================================================
+
+def _mp4_bytes() -> bytes:
+    """Minimal MP4 header (size + ftyp box) that passes the magic-byte check."""
+    return b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00\x00\x00\x08free" + b"\x00" * 64
+
+
+def test_dashboard_upload_mp4_via_form(client):
+    """The dashboard form must accept a video file part (regression: file typed as bytes)."""
+    resp = client.post(
+        "/assets/new",
+        files={"file": ("clip.mp4", _mp4_bytes(), "video/mp4")},
+        data={"form_type": "upload", "description": "a clip", "tags": "verify"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+    location = resp.headers["location"].split("?", 1)[0]
+    assert location.startswith("/assets/") and location != "/assets/new"
+
+    detail = client.get(location)
+    assert detail.status_code == 200
+    assert "clip.mp4" in detail.text
+
+    asset_id = int(location.rsplit("/", 1)[1])
+    meta = client.get(f"/api/v1/assets/{asset_id}").json()
+    assert meta["media_type"] == "video"
+    assert meta["mime_type"] == "video/mp4"
+    assert meta["storage_type"] == "upload"
+
+
+def test_dashboard_upload_png_via_form(client):
+    resp = client.post(
+        "/assets/new",
+        files=_png_file(),
+        data={"form_type": "upload", "description": "a still"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+    assert resp.headers["location"].startswith("/assets/")
+
+
 def test_patch_description_and_tags(client):
     resp = client.post("/api/v1/assets/upload", files=_png_file(), data={"description": "before"})
     asset_id = resp.json()["id"]
@@ -312,7 +355,7 @@ def test_sync_registers_files_and_auto_tags(client, tmp_path, monkeypatch):
 
 
 def test_sync_not_configured_400(client, monkeypatch):
-    monkeypatch.delenv("MEDIA_SYNC_DIR", raising=False)
+    monkeypatch.setenv("MEDIA_SYNC_DIR", "")
     clear_settings_cache()
     try:
         resp = client.post("/api/v1/assets/sync")

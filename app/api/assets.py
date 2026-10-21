@@ -29,6 +29,7 @@ async def list_assets_endpoint(
     media_type: Optional[str] = None,
     storage_type: Optional[str] = None,
     unused: bool = False,
+    used: bool = False,
     include_inactive: bool = False,
     limit: int = Query(50, le=100, ge=1),
     offset: int = Query(0, ge=0),
@@ -42,6 +43,7 @@ async def list_assets_endpoint(
         media_type=media_type,
         storage_type=storage_type,
         unused=unused,
+        used=used,
         include_inactive=include_inactive,
         limit=limit,
         offset=offset,
@@ -124,8 +126,13 @@ async def update_asset_endpoint(asset_id: int, req: AssetUpdate, db: Session = D
 
 
 @router.delete("/{asset_id}")
-async def archive_asset_endpoint(asset_id: int, db: Session = Depends(get_db)):
-    """Archive an asset (soft delete, no file deletion)."""
+async def archive_asset_endpoint(
+    asset_id: int, permanent: bool = False, force: bool = False, db: Session = Depends(get_db),
+):
+    """Archive an asset (default). `?permanent=true` deletes it for good (uploads/links only);
+    `&force=true` is needed when non-archived posts use it."""
+    if permanent:
+        return assets_service.delete_asset_permanently(db, asset_id, force=force)
     asset = assets_service.archive_asset(db, asset_id)
     asset = assets_service.get_asset(db, asset.id)
     return _asset_out(db, asset).model_dump(mode="json")

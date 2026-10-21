@@ -336,6 +336,7 @@ def list_assets(
     include_inactive: bool = False,
     limit: int = 50,
     offset: int = 0,
+    used: bool = False,
 ) -> dict:
     """List assets with filters."""
     query = select(MediaAsset).options(joinedload(MediaAsset.tags))
@@ -360,13 +361,13 @@ def list_assets(
     if storage_type:
         query = query.where(MediaAsset.storage_type == storage_type)
 
-    if unused:
-        # No non-archived posts referencing this asset
+    if unused or used:
+        # used = referenced by at least one non-archived post
         used_subq = select(ContentPost.media_asset_id).where(
             ContentPost.media_asset_id.isnot(None),
             ContentPost.status != PostStatus.archived.value,
         )
-        query = query.where(~MediaAsset.id.in_(used_subq))
+        query = query.where(MediaAsset.id.in_(used_subq) if used else ~MediaAsset.id.in_(used_subq))
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -436,6 +437,59 @@ def archive_asset(db: Session, asset_id: int) -> MediaAsset:
     return asset
 
 
+def delete_asset_permanently(db: Session, asset_id: int, force: bool = False) -> dict:
+    """Permanently delete an uploaded or Dropbox-link asset (and its uploaded file).
+
+    - Synced Dropbox files are never deleted: the folder is read-only to this app, and a deleted row
+      would simply be re-imported by the next Sync. Archive them instead.
+    - An asset used by non-archived posts needs force=True; those posts keep their text and lose the media.
+    """
+    from sqlalchemy import update
+
+    from app.models import GenerationLog
+    from app.services import AppError
+
+    asset = db.get(MediaAsset, asset_id)
+    if not asset:
+        raise AppError("not_found", "Asset not found", 404)
+    if asset.storage_type == StorageType.local_sync.value:
+        raise AppError(
+            "synced_asset",
+            "Synced Dropbox files can't be deleted here: your Dropbox folder is never changed, and the file "
+            "would come back on the next Sync. Archive it instead (it stays hidden).",
+            409,
+        )
+    uses = get_usage_count(db, asset_id)
+    if uses and not force:
+        raise AppError(
+            "asset_in_use",
+            f"This asset is used by {uses} post(s). Deleting it keeps those posts but removes their media. "
+            "Confirm to delete anyway.",
+            409,
+        )
+
+    path = None
+    if asset.storage_type == StorageType.upload.value and asset.local_relpath:
+        try:
+            path = resolve_asset_file(asset)  # containment-checked path inside MEDIA_UPLOAD_DIR
+        except HTTPException:
+            path = None
+
+    db.execute(update(ContentPost).where(ContentPost.media_asset_id == asset_id).values(media_asset_id=None))
+    db.execute(update(GenerationLog).where(GenerationLog.media_asset_id == asset_id).values(media_asset_id=None))
+    db.delete(asset)
+    db.commit()
+
+    removed = False
+    if path:
+        try:
+            path.unlink()
+            removed = True
+        except OSError:
+            logger.warning("asset %s deleted but its file could not be removed", asset_id)
+    return {"deleted": asset_id, "file_removed": removed, "posts_detached": uses}
+
+
 # =========================================================================
 # File resolution / preview URL
 # =========================================================================
@@ -474,6 +528,19 @@ def get_preview_url(asset: MediaAsset) -> Optional[str]:
     if asset.storage_type == StorageType.external_url.value:
         return None
     return f"/api/v1/assets/{asset.id}/file"
+
+
+def get_usage_counts(db: Session, asset_ids: list[int]) -> dict[int, int]:
+    """Non-archived post counts for many assets in one query."""
+    if not asset_ids:
+        return {}
+    rows = db.execute(
+        select(ContentPost.media_asset_id, func.count(ContentPost.id)).where(
+            ContentPost.media_asset_id.in_(asset_ids),
+            ContentPost.status != PostStatus.archived.value,
+        ).group_by(ContentPost.media_asset_id)
+    ).all()
+    return {a: n for a, n in rows}
 
 
 def get_usage_count(db: Session, asset_id: int) -> int:
