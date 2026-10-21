@@ -251,7 +251,7 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
         }
 
-    from app.api import profiles, assets, content, posts, tags
+    from app.api import profiles, assets, content, posts, tags, planner
     from app.web import routes as web_routes
 
     app.include_router(profiles.router, prefix="/api/v1")
@@ -259,6 +259,7 @@ def create_app() -> FastAPI:
     app.include_router(content.router, prefix="/api/v1")
     app.include_router(posts.router, prefix="/api/v1")
     app.include_router(tags.router, prefix="/api/v1")
+    app.include_router(planner.router, prefix="/api/v1")
     app.include_router(web_routes.router)
 
     # Static files

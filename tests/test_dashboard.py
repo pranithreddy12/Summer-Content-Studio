@@ -251,3 +251,94 @@ def test_library_shows_real_usage_and_used_filter(client):
     assert "All videos" in used and "Unused clip" not in used
     unused = client.get("/assets?usage=unused").text
     assert "Unused clip" in unused and "All videos" not in unused
+
+
+# =========================================================================
+# Phase 2 (B2): planner + calendar pages, both_platforms pair
+# =========================================================================
+
+def _mp4_kb() -> bytes:
+    """A >1 KB MP4-prefixed blob (passes magic-byte check; is a usable video)."""
+    base = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00\x00\x00\x08free"
+    return base + b"\x00" * 2048
+
+
+def test_planner_page_renders(client):
+    from app.db import get_session_factory
+    from app.models import PostingRule
+
+    db = get_session_factory()()
+    db.add(PostingRule(model_profile_id=1, platform="instagram", is_active=False))
+    db.commit()
+    resp = client.get("/planner")
+    assert resp.status_code == 200
+    assert "Plan next 7 days" in resp.text
+    assert "instagram" in resp.text
+
+
+def test_planner_page_week_grid_with_data(client, fake_claude):
+    from tests.test_planner import make_approved
+    make_approved(caption="W", i=1)
+    resp = client.get("/planner")
+    assert resp.status_code == 200
+
+
+def test_plan_next_7_days_button_flow(client, fake_claude):
+    from app.db import get_session_factory
+    from app.models import PostingRule
+
+    db = get_session_factory()()
+    db.add(PostingRule(model_profile_id=1, platform="instagram", posts_per_week=10,
+                       min_per_day=1, max_per_day=2, window_start="08:00", window_end="21:00",
+                       min_gap_minutes=180, timezone="Europe/London", is_active=True))
+    db.commit()
+
+    from tests.test_planner import make_approved
+    for i in range(10):
+        make_approved(caption="B", i=i)
+
+    resp = client.post("/planner/plan", data={"platform": "instagram", "profile_id": "1"},
+                       follow_redirects=False)
+    assert resp.status_code == 303
+    page = client.get(resp.headers["location"])
+    assert "slots filled" in page.text
+    # running it twice: nothing new scheduled
+    resp = client.post("/planner/plan", data={"platform": "instagram", "profile_id": "1"},
+                       follow_redirects=False)
+    page = client.get(resp.headers["location"])
+    assert "0 slots filled" in page.text
+
+
+def test_calendar_page_renders_and_links(client, fake_claude):
+    from tests.test_planner import make_approved
+    pid = make_approved(caption="C", i=1)
+    resp = client.get("/calendar")
+    assert resp.status_code == 200
+    resp = client.get(f"/posts/{pid}")  # calendar slot links to post detail
+    assert resp.status_code == 200
+
+
+def test_generate_random_both_platforms_creates_pair(client, fake_claude):
+    """Videos produce an Instagram + TikTok pair sharing a group_key (PLAN §9a)."""
+    files = {"file": ("clip.mp4", _mp4_kb(), "video/mp4")}
+    upload = client.post("/api/v1/assets/upload", files=files, data={"description": "video"})
+    assert upload.status_code == 201, upload.text
+
+    resp = client.post("/generate/random", data={
+        "platform": "instagram",
+        "campaign": "auto",
+        "count": "1",
+        "media_type": "video",
+        "both_platforms": "true",
+        "batch_key": "pair-test-1",
+    }, follow_redirects=False)
+    assert resp.status_code == 303, resp.headers.get("location")
+
+    posts = client.get("/api/v1/posts").json()["items"]
+    pair = [p for p in posts if p["platform"] in ("instagram", "tiktok")]
+    assert len(pair) == 2
+    platforms = sorted(p["platform"] for p in pair)
+    assert platforms == ["instagram", "tiktok"]
+    keys = {p.get("group_key") for p in pair}
+    assert len(keys) == 1 and next(iter(keys))  # same, non-empty group_key
+    assert all(p["status"] == "draft" for p in pair)  # drafts only, never approved

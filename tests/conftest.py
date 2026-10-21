@@ -52,8 +52,11 @@ def app(settings):
     from app.security import _rate_limit_store
     _rate_limit_store.clear()
 
-    # Create engine bound to test database
-    engine = make_engine(settings.DATABASE_URL)
+    # Create engine bound to test database (NullPool: tests open many short-lived
+    # sessions; a shared pool would exhaust with open-but-uncommitted sessions)
+    from sqlalchemy.pool import NullPool
+
+    engine = make_engine(settings.DATABASE_URL, poolclass=NullPool)
     Base.metadata.create_all(engine)
 
     # Build app
@@ -66,6 +69,19 @@ def app(settings):
     db_module._engine = engine
     db_module._SessionLocal = None  # Will be recreated by get_session_factory
 
+    # Track every Session made through get_session_factory() and close them all
+    # at teardown (tests create many sessions; leaked ones exhaust the pool).
+    real_sessionmaker = db_module.get_session_factory()
+    opened = []
+
+    class _TrackingSessionMaker:
+        def __call__(self, *args, **kwargs):
+            s = real_sessionmaker(*args, **kwargs)
+            opened.append(s)
+            return s
+
+    db_module._SessionLocal = _TrackingSessionMaker()
+
     # Seed database
     from app.db import session_scope
     with session_scope() as session:
@@ -74,8 +90,13 @@ def app(settings):
     yield test_app
 
     # Cleanup
-    db_module._engine = old_engine
+    for s in opened:
+        try:
+            s.close()
+        except Exception:
+            pass
     db_module._SessionLocal = old_session
+    db_module._engine = old_engine
     engine.dispose()
     Base.metadata.drop_all(engine)
 

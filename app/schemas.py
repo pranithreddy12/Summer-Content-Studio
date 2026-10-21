@@ -293,6 +293,17 @@ class PostOut(BaseSchema):
     archived_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    # ---- Phase 2 (PLAN §6.3) ----
+    published_at: Optional[datetime] = None
+    published_via: Optional[str] = None
+    external_post_id: Optional[str] = None
+    external_url: Optional[str] = None
+    publish_attempt_count: int = 0
+    next_attempt_at: Optional[datetime] = None
+    last_publish_error: Optional[str] = None
+    planned_by: Optional[str] = None
+    group_key: Optional[str] = None
+    reminded_at: Optional[datetime] = None
     tags: List[TagOut] = []
     asset: Optional[AssetOut] = None
     variant_count: int = 0
@@ -336,6 +347,7 @@ class RandomDraftRequest(BaseSchema):
     profile_id: Optional[int] = None
     seasonal_context: str = Field("", max_length=500)
     batch_key: Optional[str] = Field(None, max_length=40)  # makes a resubmitted batch idempotent
+    both_platforms: bool = False  # videos -> Instagram + TikTok pair sharing group_key
 
 
 class RandomDraftOut(BaseSchema):

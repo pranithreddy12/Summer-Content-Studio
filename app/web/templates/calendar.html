@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Calendar — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Calendar</span>
+      <h1>Week of {{ days[0].date.strftime('%d %b') }}</h1>
+      <p class="page-lede">Scheduled and published posts, 7 columns. Times shown in {{ timezone }}.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn" href="/calendar?week={{ prev_week }}">&larr; Prev week</a>
+      <a class="btn" href="/calendar">This week</a>
+      <a class="btn" href="/calendar?week={{ next_week }}">Next week &rarr;</a>
+    </div>
+  </header>
+  {% include "_flash.html" %}
+
+  <div class="calendar-grid">
+    {% for day in days %}
+    <div class="cal-day{% if day.date.isoformat() == today %} cal-today{% endif %}">
+      <div class="cal-head">{{ day.date.strftime('%a') }} <span>{{ day.date.strftime('%d') }}</span></div>
+      {% for post in day.posts %}
+      <a class="cal-slot slot-{{ post.status }}{% if post.planned_by == 'planner' %} slot-planner{% endif %}{% if not post.in_window %} slot-out-of-window{% endif %}"
+         href="/posts/{{ post.id }}"
+         title="{{ post.status }} · {{ post.platform }}{% if not post.in_window %} · outside the posting window{% endif %}">
+        {{ post.planned_publish_at.strftime('%H:%M') }} {{ post.platform[:2] }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

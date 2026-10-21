@@ -65,5 +65,45 @@ def sync_media() -> None:
         click.echo(f"Sync complete: {result['added']} added, {result['skipped']} skipped")
 
 
+@cli.command()
+@click.option("--profile", "profile_id", default=1, type=int, show_default=True)
+@click.option("--platform", default="instagram", show_default=True)
+@click.option("--seed", "seed", default=None, type=int,
+              help="RNG seed for deterministic runs (e.g. reviews)")
+def plan_week(profile_id: int, platform: str, seed) -> None:
+    """Plan the next 7 days for one (profile, platform) rule (PLAN §9a)."""
+    import random as _random
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import select as _select
+
+    from app.models import PostingRule
+    from app.db import utcnow
+    from app.services.planner import plan_week as _plan_week
+
+    with session_scope() as db:
+        rule = db.execute(
+            _select(PostingRule).where(PostingRule.model_profile_id == profile_id,
+                                       PostingRule.platform == platform)
+        ).scalar_one_or_none()
+        if not rule:
+            click.echo(f"No posting rule for profile {profile_id} / {platform}", err=True)
+            sys.exit(1)
+        rng = _random.Random(seed) if seed is not None else None
+        result = _plan_week(db, rule, utcnow(), rng=rng)
+        click.echo(
+            f"[{platform}] slots={len(result.slots)} filled={len(result.filled)} "
+            f"unfilled={len(result.unfilled)} topup_drafts={len(result.topup_drafts)}"
+        )
+        tz = ZoneInfo(rule.timezone)
+        day = (utcnow().astimezone(tz) + timedelta(days=1)).date()
+        for _i in range(7):
+            times = [s.start_utc.astimezone(tz).strftime("%H:%M")
+                     for s in sorted(result.slots, key=lambda s: s.start_utc) if s.local_day == day]
+            click.echo(f"  {day.isoformat()}: {', '.join(times) or '-'} ({'filled' if times else 'unfilled'})")
+            day = day + timedelta(days=1)
+
+
 if __name__ == "__main__":
     cli()

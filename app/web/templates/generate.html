@@ -66,6 +66,29 @@
         </div>
       </form>
 
+      <form method="post" action="/generate/random" class="form-box" id="pair-form">
+        <h3>Instagram + TikTok pair</h3>
+        <p class="small">Same pattern as &ldquo;Surprise me&rdquo;, but each random <strong>video</strong> becomes a mirrored pair: an Instagram post and a TikTok, sharing a planning group. Images produce an Instagram draft only (TikTok inbox takes videos). Nothing is published.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="p_count">How many videos</label>
+            <select name="count" id="p_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+          </div>
+          <div class="form-group">
+            <label for="p_season">Seasonal context</label>
+            <input type="text" name="seasonal_context" id="p_season" maxlength="500" placeholder="e.g. Halloween week">
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include assets that already have a draft</span></label>
+        <input type="hidden" name="platform" value="instagram">
+        <input type="hidden" name="media_type" value="video">
+        <input type="hidden" name="both_platforms" value="true">
+        <input type="hidden" name="batch_key" id="pair-batch-key" value="{{ batch_key }}">
+        <div class="form-actions">
+          <button type="submit" class="btn btn-ok btn-md" id="pair-btn">Create Instagram + TikTok pair</button>
+        </div>
+      </form>
+
       <form method="post" action="/generate" class="form-box">
         <div class="form-row">
           <div class="form-group">

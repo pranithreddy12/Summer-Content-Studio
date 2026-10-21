@@ -1078,3 +1078,37 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
   .meta-list { grid-template-columns: 1fr; }
   h1, .page-title { font-size: 1.6rem; }
 }
+
+/* ==== Phase 2: planner + calendar (PLAN §13) ==== */
+.two-col { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 24px; align-items: start; }
+.two-col .form-box { margin: 0; }
+.week-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.week-day { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; min-height: 88px; }
+.week-day-head { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.slot { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.78rem; margin: 2px 3px 2px 0; border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.slot-scheduled { background: rgba(230, 160, 60, 0.14); border-color: rgba(230, 160, 60, 0.4); color: var(--amber, #e6a03c); }
+.slot-published { background: rgba(93, 186, 133, 0.14); border-color: rgba(93, 186, 133, 0.4); color: var(--ok); }
+.slot-publishing { background: rgba(120, 140, 220, 0.14); border-color: rgba(120, 140, 220, 0.4); }
+.slot-sent_to_drafts { background: rgba(120, 140, 220, 0.1); border-color: var(--border); }
+.slot-failed { background: rgba(220, 90, 80, 0.14); border-color: rgba(220, 90, 80, 0.4); color: var(--danger, #d95a50); }
+.slot-empty { opacity: 0.45; font-size: 0.75rem; }
+.slot-user { outline: 1px dashed var(--border); }
+.slot-out-of-window::after { content: "⚠ out of window"; display: block; font-size: 0.62rem; color: #e6a03c; }
+
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 18px; }
+.cal-day { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px; min-height: 120px; }
+.cal-day.cal-today { border-color: rgba(230, 160, 60, 0.55); }
+.cal-head { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.cal-head span { display: block; font-size: 1.05rem; color: var(--text); letter-spacing: 0; }
+.cal-slot { display: block; padding: 4px 8px; border-radius: 7px; font-size: 0.75rem; margin-bottom: 4px; border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.cal-slot.slot-planner { border-left: 3px solid #e6a03c; }
+
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+  .calendar-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 700px) {
+  .calendar-grid { grid-template-columns: 1fr; }
+  .week-grid { grid-template-columns: repeat(2, 1fr); }
+}

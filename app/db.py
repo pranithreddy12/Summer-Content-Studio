@@ -18,7 +18,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def make_engine(url: Optional[str] = None) -> Engine:
+def make_engine(url: Optional[str] = None, poolclass=None) -> Engine:
     """Create a SQLAlchemy engine from a URL (or settings default)."""
     if url is None:
         url = get_settings().DATABASE_URL
@@ -27,7 +27,10 @@ def make_engine(url: Optional[str] = None) -> Engine:
     if url.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
 
-    engine = create_engine(url, connect_args=connect_args)
+    kwargs = {}
+    if poolclass is not None:
+        kwargs["poolclass"] = poolclass
+    engine = create_engine(url, connect_args=connect_args, **kwargs)
 
     # Enable foreign keys + WAL for SQLite (web + worker share the file, PLAN §5)
     if url.startswith("sqlite"):

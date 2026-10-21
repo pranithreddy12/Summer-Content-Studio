@@ -5,6 +5,7 @@ A human still reviews and approves every draft (nothing is published). Capped at
 
 import logging
 import random
+import uuid
 from typing import Optional
 
 from fastapi import HTTPException
@@ -56,7 +57,13 @@ def _campaign_for(asset: MediaAsset, requested: str) -> str:
 
 
 def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict:
-    """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created."""
+    """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created.
+
+    both_platforms (PLAN §9a step 7): each random VIDEO asset creates an
+    Instagram + TikTok pair sharing a group_key (captions generated per
+    platform); images produce an Instagram draft only (TikTok inbox is video
+    only). Still drafts only - never approved.
+    """
     profile = db.get(ModelProfile, req.profile_id) if req.profile_id else db.execute(
         select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.id)).scalars().first()
     if not profile:
@@ -66,27 +73,38 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict
     available = len(pool)
     posts, errors = [], []
     for i in range(req.count):
-        key = f"{req.batch_key}-{i}" if req.batch_key else None
-        if key:  # resubmitted batch: reuse what was already created, don't pay again
-            done = db.execute(select(ContentPost).where(ContentPost.idempotency_key == key)).scalar_one_or_none()
-            if done:
-                posts.append(done)
-                continue
         if not pool:
             break
         asset = pool.pop(random.randrange(len(pool)))
-        gen = GenerateRequest(
-            profile_id=profile.id, platform=req.platform,
-            content_type=CONTENT_TYPE[(req.platform.value, asset.media_type)],
-            campaign=_campaign_for(asset, req.campaign), asset_id=asset.id,
-            seasonal_context=req.seasonal_context, idempotency_key=key,
-        )
-        try:
-            posts.append(generate_draft(db, gen, client))
-        except HTTPException as e:  # provider/validation error: stop (the next call would likely fail too)
-            detail = e.detail if isinstance(e.detail, dict) else {"code": "error", "message": str(e.detail)}
-            errors.append({"asset_id": asset.id, "filename": asset.filename, "status": e.status_code, **detail})
-            break
+        group_key = uuid.uuid4().hex[:40] if req.both_platforms else None
+        targets = (["instagram", "tiktok"] if asset.media_type == MediaType.video.value else ["instagram"])
+        if not req.both_platforms:
+            targets = [req.platform.value]
+        for target in targets:
+            key = f"{req.batch_key}-{i}-{target}" if req.batch_key else None
+            if key:  # resubmitted batch: reuse what was already created, don't pay again
+                done = db.execute(select(ContentPost).where(ContentPost.idempotency_key == key)).scalar_one_or_none()
+                if done:
+                    posts.append(done)
+                    continue
+            gen = GenerateRequest(
+                profile_id=profile.id, platform=target,
+                content_type=CONTENT_TYPE[(target, asset.media_type)],
+                campaign=_campaign_for(asset, req.campaign), asset_id=asset.id,
+                seasonal_context=req.seasonal_context, idempotency_key=key,
+            )
+            try:
+                post = generate_draft(db, gen, client)
+                if group_key:
+                    stored = get_post(db, post.id)
+                    stored.group_key = group_key
+                    db.commit()
+                    post = stored
+                posts.append(post)
+            except HTTPException as e:  # provider/validation error: stop (the next call would likely fail too)
+                detail = e.detail if isinstance(e.detail, dict) else {"code": "error", "message": str(e.detail)}
+                errors.append({"asset_id": asset.id, "filename": asset.filename, "status": e.status_code, **detail})
+                break
 
     if not posts:
         if errors:
