@@ -1,92 +1,139 @@
 {% extends "base.html" %}
-{% block title %}{% if profile %}{{ profile.name }} Profile{% else %}Profiles{% endif %} - Summer Content{% endblock %}
+{% block title %}{% if profile %}{{ profile.name }} — Summer Content{% else %}Profiles — Summer Content{% endif %}{% endblock %}
 {% block content %}
+<div class="page">
+  {% if profiles %}
+  <a class="back-link" href="/">&larr; Overview</a>
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Voice</span>
+      <h1>Profiles</h1>
+      <p class="page-lede">The persona, tone and guardrails every draft is written against.</p>
+    </div>
+  </header>
 
-{% if profiles %}
-<!-- Profiles list -->
-<h1>Profiles</h1>
-<table class="table">
-    <thead>
-        <tr><th>ID</th><th>Name</th><th>Slug</th><th>Active</th><th></th></tr>
-    </thead>
-    <tbody>
+  <div class="table-wrap card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Slug</th>
+          <th>Active</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
         {% for p in profiles %}
         <tr>
-            <td>{{ p.id }}</td>
-            <td>{{ p.name }}</td>
-            <td>{{ p.slug }}</td>
-            <td>{% if p.is_active %}✅{% else %}❌{% endif %}</td>
-            <td><a href="/profiles/{{ p.id }}" class="btn btn-sm">Edit</a></td>
+          <td><strong>{{ p.name }}</strong></td>
+          <td><span class="mono">{{ p.slug }}</span></td>
+          <td>{% if p.is_active %}<span class="badge badge-approved">active</span>{% else %}<span class="badge badge-archived">inactive</span>{% endif %}</td>
+          <td><a href="/profiles/{{ p.id }}" class="btn btn-sm">Edit</a></td>
         </tr>
         {% endfor %}
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
 
-{% elif profile %}
-<!-- Single profile edit -->
-<h1>{{ profile.name }}</h1>
+  {% elif profile %}
+  <a class="back-link" href="/profiles">&larr; Profiles</a>
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Profile</span>
+      <h1>{{ profile.name }}</h1>
+      <div class="profile-handles" style="margin-top:12px;">
+        {% for platform, handle in profile.handles.items() %}
+        <span class="handle-pill"><strong>{{ platform }}:</strong> @{{ handle }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="page-actions">
+      {% if profile.is_active %}<span class="badge badge-approved">active</span>{% else %}<span class="badge badge-archived">inactive</span>{% endif %}
+    </div>
+  </header>
 
-<form method="post" action="/profiles/{{ profile.id }}" class="form-box form-wide">
+  <form method="post" action="/profiles/{{ profile.id }}" class="form-box">
     <div class="form-row">
-        <div class="form-group">
-            <label for="name">Name</label>
-            <input type="text" name="name" id="name" value="{{ profile.name }}" required maxlength="100">
-        </div>
-        <div class="form-group">
-            <label class="checkbox-label">
-                <input type="checkbox" name="is_active" value="true" {% if profile.is_active %}checked{% endif %}>
-                Active
-            </label>
-        </div>
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" name="name" id="name" value="{{ profile.name }}" required maxlength="100">
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end;">
+        <label class="check">
+          <input type="checkbox" name="is_active" value="true" {% if profile.is_active %}checked{% endif %}>
+          <span>Active</span>
+        </label>
+      </div>
     </div>
 
-    <div class="form-group">
-        <label for="persona_description">Persona Description</label>
+    <div class="section-block">
+      <div class="block-label">Persona</div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="persona_description">Persona description</label>
         <textarea name="persona_description" id="persona_description" rows="4" required>{{ profile.persona_description }}</textarea>
+      </div>
     </div>
 
-    <div class="form-group">
-        <label for="tone_style">Tone &amp; Style</label>
+    <div class="section-block">
+      <div class="block-label">Voice</div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="tone_style">Tone &amp; style</label>
         <textarea name="tone_style" id="tone_style" rows="3" required>{{ profile.tone_style }}</textarea>
+      </div>
     </div>
 
-    <div class="form-group">
-        <label for="communication_rules">Communication Rules (one per line)</label>
-        <textarea name="communication_rules" id="communication_rules" rows="6">{{ profile.communication_rules | join('\n') }}</textarea>
-    </div>
-
-    <div class="form-group">
-        <label for="restricted_topics">Restricted Topics (one per line)</label>
-        <textarea name="restricted_topics" id="restricted_topics" rows="6">{{ profile.restricted_topics | join('\n') }}</textarea>
-    </div>
-
-    <div class="form-group">
-        <label for="style_notes">Style Notes (from reference accounts)</label>
-        <textarea name="style_notes" id="style_notes" rows="3">{{ profile.style_notes }}</textarea>
-        <small>Learnings from reference accounts — fill in via research, paste summary here.</small>
-    </div>
-
-    <div class="form-group">
-        <label for="cta_guidelines">CTA Guidelines</label>
-        <textarea name="cta_guidelines" id="cta_guidelines" rows="3">{{ profile.cta_guidelines }}</textarea>
-    </div>
-
-    <div class="form-group">
-        <label>Handles</label>
-        <div class="handles-display">
-            {% for platform, handle in profile.handles.items() %}
-            <span class="handle"><strong>{{ platform }}:</strong> @{{ handle }}</span>
-            {% endfor %}
+    <div class="form-row">
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">Communication rules (one per line)</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="communication_rules" id="communication_rules" rows="6">{{ profile.communication_rules | join('\n') }}</textarea>
         </div>
-        <small>Read-only — edit via database or seed file.</small>
+      </div>
+
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">Restricted topics (one per line)</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="restricted_topics" id="restricted_topics" rows="6">{{ profile.restricted_topics | join('\n') }}</textarea>
+        </div>
+      </div>
     </div>
 
-    <button type="submit" class="btn btn-primary">Save Profile</button>
-</form>
+    <div class="form-row">
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">Style notes (from reference accounts)</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="style_notes" id="style_notes" rows="3">{{ profile.style_notes }}</textarea>
+          <div class="field-hint">Learnings from reference accounts — paste a short summary here.</div>
+        </div>
+      </div>
 
-<p><a href="/profiles">&larr; Back to Profiles</a></p>
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">CTA guidelines</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="cta_guidelines" id="cta_guidelines" rows="3">{{ profile.cta_guidelines }}</textarea>
+        </div>
+      </div>
+    </div>
 
-{% else %}
-<p class="empty">No profiles found.</p>
-{% endif %}
+    <div class="section-block">
+      <div class="block-label">Handles (read-only)</div>
+      <div class="profile-handles">
+        {% for platform, handle in profile.handles.items() %}
+        <span class="handle-pill"><strong>{{ platform }}:</strong> @{{ handle }}</span>
+        {% endfor %}
+      </div>
+      <p class="small" style="margin-top:8px;margin-bottom:0;">Handles are stored in the profile record and edited via the database or seed file.</p>
+    </div>
+
+    <div class="form-actions" style="margin-top:18px;">
+      <button type="submit" class="btn btn-primary">Save Profile</button>
+    </div>
+  </form>
+
+  {% else %}
+  <div class="empty-state card">
+    <div class="empty-title">No profiles found</div>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

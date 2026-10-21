@@ -180,7 +180,7 @@ def test_generate_form_missing_api_key_shows_error(client, monkeypatch):
     import os
     from app.config import clear_settings_cache
 
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     clear_settings_cache()
     try:
         resp = client.post("/generate", data={
@@ -229,3 +229,25 @@ def test_static_css_served(client):
 def test_dashboard_404_for_unknown_post(client):
     resp = client.get("/posts/999")
     assert resp.status_code == 404
+
+
+def test_generate_button_does_not_disable_on_click(client):
+    """Disabling the submit button in a click handler cancels the form submit (button did nothing)."""
+    html = client.get("/generate").text
+    assert "generateBtn.form.addEventListener('submit'" in html
+    assert "addEventListener('click'" not in html
+
+
+def test_library_shows_real_usage_and_used_filter(client):
+    a = client.post("/api/v1/assets", json=dict(filename="All videos", media_type="video",
+                    storage_type="external_url", source_ref="https://www.dropbox.com/scl/fo/abc/xyz")).json()
+    b = client.post("/api/v1/assets", json=dict(filename="Unused clip", media_type="video",
+                    storage_type="external_url", source_ref="https://www.dropbox.com/scl/fi/def/z.mp4")).json()
+    client.post("/api/v1/posts", json=dict(profile_id=1, platform="instagram", content_type="feed_post",
+                campaign="lifestyle", caption="x", asset_id=a["id"]))
+    page = client.get("/assets").text
+    assert "1 use<" in page.replace("</span>", "<") or "1 use" in page
+    used = client.get("/assets?usage=used").text
+    assert "All videos" in used and "Unused clip" not in used
+    unused = client.get("/assets?usage=unused").text
+    assert "Unused clip" in unused and "All videos" not in unused

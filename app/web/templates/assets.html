@@ -1,87 +1,107 @@
 {% extends "base.html" %}
-{% block title %}Media Library - Summer Content{% endblock %}
+{% block title %}Media Library — Summer Content{% endblock %}
 {% block content %}
-<h1>Media Library</h1>
-
-<div class="toolbar">
-    <a href="/assets/new" class="btn btn-primary">Upload / Register</a>
-    <form method="post" action="/assets/sync" class="inline-form">
-        <button type="submit" class="btn">Sync Dropbox Folder</button>
-    </form>
-</div>
-
-<form method="get" action="/assets" class="filter-form">
-    <div class="filter-row">
-        <input type="text" name="q" value="{{ filters.q }}" placeholder="Search filename or description…">
-        <select name="tag">
-            <option value="">All tags</option>
-            {% for t in category_tags %}
-            <option value="{{ t.slug }}" {% if filters.tag == t.slug %}selected{% endif %}>{{ t.name }}</option>
-            {% endfor %}
-        </select>
-        <select name="media_type">
-            <option value="">All types</option>
-            <option value="image" {% if filters.media_type == 'image' %}selected{% endif %}>Image</option>
-            <option value="video" {% if filters.media_type == 'video' %}selected{% endif %}>Video</option>
-        </select>
-        <label class="checkbox-label">
-            <input type="checkbox" name="unused" value="true" {% if filters.unused %}checked{% endif %}> Unused only
-        </label>
-        <label class="checkbox-label">
-            <input type="checkbox" name="include_inactive" value="true" {% if filters.include_inactive %}checked{% endif %}> Include archived
-        </label>
-        <button type="submit" class="btn">Filter</button>
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Library</span>
+      <h1>Media Library</h1>
+      <p class="page-lede">Images and video Claude can pull into a draft. Descriptions here are the only thing the model knows about a file.</p>
     </div>
-</form>
+    <div class="page-actions">
+      <a href="/assets/new" class="btn btn-primary">Upload / Register</a>
+      {% if MEDIA_SYNC_DIR %}
+      <form method="post" action="/assets/sync" class="inline-form">
+        <button type="submit" class="btn">Sync Dropbox Folder</button>
+      </form>
+      {% endif %}
+    </div>
+  </header>
 
-<p class="result-count">{{ total }} asset{{ 's' if total != 1 }}</p>
+  <form method="get" action="/assets" class="filter-bar">
+    <input type="text" name="q" value="{{ filters.q }}" placeholder="Search filename or description…">
+    <select name="tag">
+      <option value="">All tags</option>
+      {% for t in category_tags %}
+      <option value="{{ t.slug }}" {% if filters.tag == t.slug %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="media_type">
+      <option value="">All types</option>
+      <option value="image" {% if filters.media_type == 'image' %}selected{% endif %}>Image</option>
+      <option value="video" {% if filters.media_type == 'video' %}selected{% endif %}>Video</option>
+    </select>
+    <select name="usage">
+      <option value="">Used &amp; unused</option>
+      <option value="used" {% if filters.usage == 'used' %}selected{% endif %}>Used in posts</option>
+      <option value="unused" {% if filters.usage == 'unused' %}selected{% endif %}>Unused only</option>
+    </select>
+    <label class="check">
+      <input type="checkbox" name="include_inactive" value="true" {% if filters.include_inactive %}checked{% endif %}>
+      <span>Include archived</span>
+    </label>
+    <button type="submit" class="btn">Filter</button>
+    <span class="filter-count">{{ total }} asset{% if total != 1 %}s{% endif %}</span>
+  </form>
 
-{% if assets %}
-<div class="asset-grid">
+  {% if assets %}
+  <div class="asset-grid">
     {% for asset in assets %}
     <div class="asset-card {% if not asset.is_active %}archived{% endif %}">
-        <a href="/assets/{{ asset.id }}">
-            {% if asset.media_type == 'image' and asset.storage_type != 'external_url' %}
-            <img src="/api/v1/assets/{{ asset.id }}/file" alt="{{ asset.filename }}" loading="lazy">
-            {% elif asset.media_type == 'video' and asset.storage_type != 'external_url' %}
-            <video src="/api/v1/assets/{{ asset.id }}/file" preload="metadata" muted></video>
-            {% elif asset.storage_type == 'external_url' %}
-            <div class="placeholder">🔗 Link</div>
-            {% else %}
-            <div class="placeholder">{{ asset.media_type }}</div>
-            {% endif %}
-        </a>
-        <div class="asset-card-body">
-            <div class="asset-filename" title="{{ asset.filename }}">{{ asset.filename }}</div>
-            <div class="asset-tags">
-                {% for tag in asset.tags %}
-                <span class="tag {% if tag.is_category %}tag-category{% endif %}">{{ tag.name }}</span>
-                {% endfor %}
-            </div>
-            <div class="asset-meta">
-                {{ asset.usage_count if asset.usage_count is defined else 0 }} uses
-            </div>
+      <a href="/assets/{{ asset.id }}">
+        <div class="asset-thumb">
+          {% if asset.media_type == 'image' and asset.storage_type != 'external_url' %}
+          <img src="/api/v1/assets/{{ asset.id }}/file" alt="{{ asset.filename }}" loading="lazy">
+          {% elif asset.media_type == 'video' and asset.storage_type != 'external_url' %}
+          <video src="/api/v1/assets/{{ asset.id }}/file" preload="metadata" muted playsinline></video>
+          {% elif asset.storage_type == 'external_url' %}
+          <div class="thumb-label">Link</div>
+          {% else %}
+          <div class="thumb-label">{{ asset.media_type }}</div>
+          {% endif %}
         </div>
-        <div class="asset-card-footer">
-            <a href="/generate?asset_id={{ asset.id }}" class="btn btn-sm">Generate</a>
+      </a>
+      <div class="asset-body">
+        <div class="asset-name" title="{{ asset.filename }}">{{ asset.filename }}</div>
+        <div class="chips">
+          {% for tag in asset.tags %}
+          <span class="chip {% if tag.is_category %}chip-category{% endif %}">{{ tag.name }}</span>
+          {% endfor %}
         </div>
+      </div>
+      <div class="asset-foot">
+        <span>{{ asset.usage_count }} use{% if asset.usage_count != 1 %}s{% endif %}</span>
+        <a href="/generate?asset_id={{ asset.id }}" class="btn btn-sm btn-ghost">Generate</a>
+        {% if asset.storage_type != 'local_sync' %}
+        <form method="post" action="/assets/{{ asset.id }}/delete" style="display:inline"
+              data-confirm="Permanently delete {{ asset.filename }}?{% if asset.usage_count %} {{ asset.usage_count }} post(s) will keep their text but lose this media.{% endif %} This cannot be undone."
+              onsubmit="return confirm(this.dataset.confirm)">
+          {% if asset.usage_count %}<input type="hidden" name="force" value="true">{% endif %}
+          <button type="submit" class="btn btn-sm btn-danger" title="Delete permanently">Delete</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
     {% endfor %}
-</div>
+  </div>
 
-{% if pages > 1 %}
-<div class="pagination">
+  {% if pages > 1 %}
+  <div class="pagination">
     {% if page > 1 %}
-    <a href="?page={{ page - 1 }}&q={{ filters.q }}&tag={{ filters.tag }}">&laquo; Prev</a>
+    <a href="?page={{ page - 1 }}&q={{ filters.q }}&tag={{ filters.tag }}&media_type={{ filters.media_type }}&usage={{ filters.usage }}&include_inactive={{ filters.include_inactive }}">&larr; Prev</a>
     {% endif %}
     <span>Page {{ page }} of {{ pages }}</span>
     {% if page < pages %}
-    <a href="?page={{ page + 1 }}&q={{ filters.q }}&tag={{ filters.tag }}">Next &raquo;</a>
+    <a href="?page={{ page + 1 }}&q={{ filters.q }}&tag={{ filters.tag }}&media_type={{ filters.media_type }}&usage={{ filters.usage }}&include_inactive={{ filters.include_inactive }}">Next &rarr;</a>
     {% endif %}
-</div>
-{% endif %}
+  </div>
+  {% endif %}
 
-{% else %}
-<p class="empty">No assets found. <a href="/assets/new">Upload or register your first asset</a>.</p>
-{% endif %}
+  {% else %}
+  <div class="empty-state card">
+    <div class="empty-title">No assets found</div>
+    <div><a href="/assets/new">Upload or register your first asset</a>.</div>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1,150 +1,246 @@
 {% extends "base.html" %}
-{% block title %}Generate - Summer Content{% endblock %}
+{% block title %}Generate — Summer Content{% endblock %}
 {% block content %}
-<h1>Generate Content</h1>
+<div class="page">
+  <a class="back-link" href="/assets">&larr; Media Library</a>
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Create</span>
+      <h1>Generate Content</h1>
+      <p class="page-lede">Pick a profile, platform and asset — Claude drafts the hook, caption, hashtags, CTA and reviewer notes.</p>
+    </div>
+  </header>
 
-{% if error %}
-<div class="flash flash-error">
-    {{ error }}
-    <button class="flash-close" onclick="this.parentElement.remove()">&times;</button>
-</div>
-{% endif %}
+  <div class="generate-flow">
+    <div class="generate-main">
+      {% if error %}
+      <div class="flash flash-error">
+        <span>{{ error }}</span>
+        <button class="flash-dismiss" onclick="this.parentElement.remove()" aria-label="Dismiss">&times;</button>
+      </div>
+      {% endif %}
 
-<form method="post" action="/generate" class="form-box form-wide">
-    <div class="form-row">
+      <form method="post" action="/generate/random" class="form-box" id="random-form">
+        <h3>Surprise me &mdash; random draft from your library</h3>
+        <p class="small">Picks random <strong>unused</strong> images/videos (uploaded, or synced from your Dropbox folder), the AI looks at them, and saves drafts for you to review. Nothing is published.
+          <strong>{{ eligible_count }}</strong> eligible asset{{ '' if eligible_count == 1 else 's' }} right now. Dropbox links can&rsquo;t be used &mdash; sync or upload the files.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="r_platform">Platform</label>
+            <select name="platform" id="r_platform">
+              <option value="instagram">instagram</option>
+              <option value="tiktok">tiktok</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="r_campaign">Campaign</label>
+            <select name="campaign" id="r_campaign">
+              <option value="auto">Auto (asset&rsquo;s tag, else Lifestyle)</option>
+              {% for c in campaigns %}<option value="{{ c.slug }}">{{ c.name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="r_count">How many drafts</label>
+            <select name="count" id="r_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+          </div>
+          <div class="form-group">
+            <label for="r_media">Media type</label>
+            <select name="media_type" id="r_media">
+              <option value="">Images &amp; videos</option>
+              <option value="image">Images only</option>
+              <option value="video">Videos only</option>
+            </select>
+          </div>
+        </div>
         <div class="form-group">
-            <label for="profile_id">Profile *</label>
+          <label for="r_season">Seasonal context</label>
+          <input type="text" name="seasonal_context" id="r_season" maxlength="500" placeholder="e.g. Halloween week">
+        </div>
+        <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include assets that already have a draft</span></label>
+        <input type="hidden" name="batch_key" value="{{ batch_key }}">
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-md" id="random-btn">Pick random &amp; generate</button>
+          <span class="small">Each draft is one AI call.</span>
+        </div>
+      </form>
+
+      <form method="post" action="/generate" class="form-box">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="profile_id">Profile</label>
             <select name="profile_id" id="profile_id" required>
-                {% for p in profiles %}
-                <option value="{{ p.id }}">{{ p.name }}</option>
-                {% endfor %}
+              {% for p in profiles %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
             </select>
-        </div>
-        <div class="form-group">
-            <label for="campaign">Campaign *</label>
+          </div>
+          <div class="form-group">
+            <label for="campaign">Campaign</label>
             <select name="campaign" id="campaign" required>
-                {% for c in campaigns %}
-                <option value="{{ c.slug }}" {% if c.slug == 'halloween' %}selected{% endif %}>{{ c.name }}</option>
-                {% endfor %}
+              {% for c in campaigns %}
+              <option value="{{ c.slug }}" {% if c.slug == 'halloween' %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
             </select>
+            <div class="field-hint">Halloween is preselected by default.</div>
+          </div>
         </div>
-    </div>
 
-    <div class="form-row">
-        <div class="form-group">
-            <label for="platform">Platform *</label>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="platform">Platform</label>
             <select name="platform" id="platform" required>
-                {% for p in platforms %}
-                <option value="{{ p }}">{{ p }}</option>
-                {% endfor %}
+              {% for p in platforms %}
+              <option value="{{ p }}">{{ p }}</option>
+              {% endfor %}
             </select>
-        </div>
-        <div class="form-group">
-            <label for="content_type">Content Type *</label>
+          </div>
+          <div class="form-group">
+            <label for="content_type">Content type</label>
             <select name="content_type" id="content_type" required>
-                {% for p, types in content_types.items() %}
-                <optgroup label="{{ p }}">
-                    {% for t in types %}
-                    <option value="{{ t }}" data-platform="{{ p }}">{{ t }}</option>
-                    {% endfor %}
-                </optgroup>
+              {% for p, types in content_types.items() %}
+              <optgroup label="{{ p|title }}">
+                {% for t in types %}
+                <option value="{{ t }}" data-platform="{{ p }}">{{ t }}</option>
                 {% endfor %}
+              </optgroup>
+              {% endfor %}
             </select>
+          </div>
         </div>
-    </div>
 
-    <div class="form-group">
-        <label for="asset_id">Media Asset</label>
-        <select name="asset_id" id="asset_id">
+        <div class="form-group">
+          <label for="asset_id">Media asset</label>
+          <select name="asset_id" id="asset_id">
             <option value="">None (text-first post)</option>
             {% for a in assets %}
             <option value="{{ a.id }}"
-                {% if selected_asset and selected_asset.id == a.id %}selected{% endif %}>
-                {{ a.filename }}{% if a.media_type == 'video' %} (video){% endif %}
+              {% if selected_asset and selected_asset.id == a.id %}selected{% endif %}>
+              {{ a.filename }}{% if a.media_type == 'video' %} · video{% endif %}
             </option>
             {% endfor %}
-        </select>
-        {% if selected_asset %}
-        <div class="selected-asset">
+          </select>
+          <div class="field-hint">Uploaded images and videos are shown to the AI (videos: 3 frames). Dropbox links can't be opened by the AI &mdash; add a description instead.</div>
+          {% if selected_asset %}
+          <div class="context-chip" style="margin-top:10px;">
             <strong>Selected:</strong> {{ selected_asset.filename }}
             {% if selected_asset.description %}
-            <p class="asset-desc">{{ selected_asset.description }}</p>
+            <div class="small">{{ selected_asset.description }}</div>
             {% endif %}
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
-    </div>
 
-    <div class="form-group">
-        <label for="seasonal_context">Seasonal Context</label>
-        <input type="text" name="seasonal_context" id="seasonal_context"
-            value="{{ form_data.seasonal_context if form_data else '' }}"
-            maxlength="500" placeholder="e.g. Halloween week">
-    </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="seasonal_context">Seasonal context</label>
+            <input type="text" name="seasonal_context" id="seasonal_context"
+              value="{{ form_data.seasonal_context if form_data else '' }}"
+              maxlength="500" placeholder="e.g. Halloween week">
+          </div>
+          <div class="form-group">
+            <label for="asset_context">Extra asset context</label>
+            <input type="text" name="asset_context" id="asset_context"
+              value="{{ form_data.asset_context if form_data else '' }}"
+              maxlength="1000" placeholder="Additional context about the media">
+          </div>
+        </div>
 
-    <div class="form-group">
-        <label for="asset_context">Extra Asset Context</label>
-        <input type="text" name="asset_context" id="asset_context"
-            value="{{ form_data.asset_context if form_data else '' }}"
-            maxlength="1000" placeholder="Additional context about the media">
-    </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="tone_variation">Tone variation</label>
+            <input type="text" name="tone_variation" id="tone_variation"
+              value="{{ form_data.tone_variation if form_data else '' }}"
+              maxlength="200" placeholder="e.g. more teasing">
+          </div>
+          <div class="form-group">
+            <label for="cta_request">CTA request</label>
+            <input type="text" name="cta_request" id="cta_request"
+              value="{{ form_data.cta_request if form_data else '' }}"
+              maxlength="200" placeholder="Leave blank to let Claude decide">
+          </div>
+        </div>
 
-    <div class="form-group">
-        <label for="tone_variation">Tone Variation</label>
-        <input type="text" name="tone_variation" id="tone_variation"
-            value="{{ form_data.tone_variation if form_data else '' }}"
-            maxlength="200" placeholder="e.g. more teasing">
-    </div>
-
-    <div class="form-group">
-        <label for="cta_request">CTA Request</label>
-        <input type="text" name="cta_request" id="cta_request"
-            value="{{ form_data.cta_request if form_data else '' }}"
-            maxlength="200" placeholder="Leave blank to let Claude decide">
-    </div>
-
-    <div class="form-group">
-        <label for="extra_restrictions">Extra Restrictions (one per line)</label>
-        <textarea name="extra_restrictions" id="extra_restrictions" rows="3"
+        <div class="form-group">
+          <label for="extra_restrictions">Extra restrictions (one per line)</label>
+          <textarea name="extra_restrictions" id="extra_restrictions" rows="3"
             placeholder="No emojis&#10;Keep under 100 characters">{{ form_data.extra_restrictions | join('\n') if form_data and form_data.extra_restrictions else '' }}</textarea>
+        </div>
+
+        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-md" id="generate-btn">Generate Draft</button>
+          <span class="small">Creates a draft post with its first variant.</span>
+        </div>
+      </form>
     </div>
 
-    <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+    <div class="generate-side">
+      <div class="sidebox">
+        <h3>Choosing a campaign</h3>
+        <p class="small">Campaigns are categories. They become the post's campaign tag and show up in the queue filter.</p>
+        <div class="chips">
+          {% for c in campaigns %}
+          <span class="chip chip-category">{{ c.name }}</span>
+          {% endfor %}
+        </div>
+      </div>
 
-    <button type="submit" class="btn btn-primary btn-lg" id="generate-btn">Generate Draft</button>
-</form>
+      <div class="sidebox">
+        <h3>What gets generated</h3>
+        <p class="small" style="margin-bottom:0;">Claude returns a hook, caption, hashtags, call to action and reviewer notes — validated against the schema, then saved as a draft plus one variant.</p>
+      </div>
+
+      <div class="sidebox">
+        <h3>Reminder</h3>
+        <p class="small" style="margin-bottom:0;">Drafts are never published automatically. Approve, review, then post manually.</p>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Filter content types by platform
 const platformSelect = document.getElementById('platform');
 const contentTypeSelect = document.getElementById('content_type');
 
 function filterContentTypes() {
-    const platform = platformSelect.value;
-    contentTypeSelect.querySelectorAll('option[data-platform]').forEach(opt => {
-        opt.style.display = opt.dataset.platform === platform ? '' : 'none';
-    });
-    contentTypeSelect.querySelectorAll('optgroup').forEach(group => {
-        const visible = Array.from(group.querySelectorAll('option')).some(o => o.style.display !== 'none');
-        group.style.display = visible ? '' : 'none';
-    });
-    // Select first visible option
-    const firstVisible = contentTypeSelect.querySelector('option[data-platform]:not([style*="display: none"])');
-    if (firstVisible) contentTypeSelect.value = firstVisible.value;
+  const platform = platformSelect.value;
+  contentTypeSelect.querySelectorAll('option[data-platform]').forEach(opt => {
+    opt.style.display = opt.dataset.platform === platform ? '' : 'none';
+  });
+  contentTypeSelect.querySelectorAll('optgroup').forEach(group => {
+    const visible = Array.from(group.querySelectorAll('option')).some(o => o.style.display !== 'none');
+    group.style.display = visible ? '' : 'none';
+  });
+  const firstVisible = contentTypeSelect.querySelector('option[data-platform]:not([style*="display: none"])');
+  if (firstVisible) contentTypeSelect.value = firstVisible.value;
 }
 
 platformSelect.addEventListener('change', filterContentTypes);
 filterContentTypes();
 
-// Disable submit button on click to prevent double submission
-document.getElementById('generate-btn').addEventListener('click', function(e) {
-    const form = this.form;
-    if (form.checkValidity()) {
-        this.disabled = true;
-        this.textContent = 'Generating…';
-        setTimeout(() => { this.disabled = false; this.textContent = 'Generate Draft'; }, 15000);
-    }
-});
+const generateBtn = document.getElementById('generate-btn');
+if (generateBtn) {
+  // Disable on the form's submit event, NOT on click: disabling the submit button
+  // during its click handler makes the browser cancel the submission.
+  generateBtn.form.addEventListener('submit', function() {
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating…';
+    setTimeout(() => { generateBtn.disabled = false; generateBtn.textContent = 'Generate Draft'; }, 60000);
+  });
+}
+const randomBtn = document.getElementById('random-btn');
+if (randomBtn) {
+  // submit event (not click) so the browser still sends the form
+  randomBtn.form.addEventListener('submit', function() {
+    randomBtn.disabled = true;
+    randomBtn.textContent = 'Generating\u2026';
+    setTimeout(() => { randomBtn.disabled = false; randomBtn.textContent = 'Pick random & generate'; }, 120000);
+  });
+}
 </script>
 {% endblock %}

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from app.api.dependencies import get_claude_client
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -16,13 +16,14 @@ from app.db import get_db, utcnow
 from app.models import (
     ModelProfile, Tag, MediaAsset, ContentPost, ContentVariant, PostStatus, PostSource
 )
-from app.schemas import GenerateRequest, PostCreate, PostUpdate, RegenerateRequest
+from app.schemas import GenerateRequest, PostCreate, PostUpdate, RandomDraftRequest, RegenerateRequest
 from app.security import generation_rate_limit, get_or_create_tags, safe_relpath
 from app.services.posts import (
     list_posts, get_post, approve_post, archive_post, restore_post,
     apply_variant, stats, update_post
 )
 from app.services.generation import generate_draft, regenerate
+from app.services.random_draft import eligible_assets
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
@@ -111,15 +112,17 @@ async def assets_list(
     media_type: str = "",
     storage_type: str = "",
     unused: bool = False,
+    usage: str = "",
     include_inactive: bool = False,
     page: int = 1,
     db: Session = Depends(get_db),
 ):
     """Media library page with filters."""
-    from app.services.assets import list_assets
+    from app.services.assets import list_assets, get_usage_counts
 
     limit = 50
     offset = (page - 1) * limit
+    unused = unused or usage == "unused"  # legacy ?unused=true still works
 
     result = list_assets(
         db,
@@ -128,10 +131,14 @@ async def assets_list(
         media_type=media_type or None,
         storage_type=storage_type or None,
         unused=unused,
+        used=(usage == "used"),
         include_inactive=include_inactive,
         limit=limit,
         offset=offset,
     )
+    counts = get_usage_counts(db, [a.id for a in result["items"]])
+    for a in result["items"]:
+        a.usage_count = counts.get(a.id, 0)  # plain attribute read by assets.html
 
     # Get all category tags for filter dropdown
     category_tags = db.execute(
@@ -146,7 +153,7 @@ async def assets_list(
         "pages": (result["total"] + limit - 1) // limit,
         "filters": {
             "q": q, "tag": tag, "media_type": media_type,
-            "storage_type": storage_type, "unused": unused,
+            "storage_type": storage_type, "usage": "unused" if unused else usage,
             "include_inactive": include_inactive,
         },
         "category_tags": category_tags,
@@ -174,7 +181,7 @@ async def asset_new_form(
 async def asset_create(
     request: Request,
     # Upload form
-    file: Optional[bytes] = Form(None),
+    file: Optional[UploadFile] = File(None),
     filename: str = Form(""),
     description: str = Form(""),
     tags: str = Form(""),
@@ -334,6 +341,25 @@ async def asset_archive(
     return redirect_with_flash("/assets", "Asset archived")
 
 
+@router.post("/assets/{asset_id}/delete")
+def asset_delete(
+    asset_id: int,
+    force: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete an uploaded/link asset (synced Dropbox files can only be archived)."""
+    from app.services import AppError
+    from app.services.assets import delete_asset_permanently
+
+    try:
+        out = delete_asset_permanently(db, asset_id, force=force)
+    except AppError as e:
+        target = "/assets" if e.status == 404 else f"/assets/{asset_id}"
+        return redirect_with_flash(target, e.message, "error")
+    note = " and its file" if out["file_removed"] else ""
+    return redirect_with_flash("/assets", f"Asset deleted{note}")
+
+
 @router.post("/assets/sync")
 async def assets_sync(
     db: Session = Depends(get_db),
@@ -388,6 +414,8 @@ async def generate_form(
             "instagram": ["feed_post", "reel", "story"],
             "tiktok": ["video", "photo_post"],
         },
+        "batch_key": uuid.uuid4().hex[:20],
+        "eligible_count": len(eligible_assets(db)),
         "flash": get_flash(request),
     })
 
@@ -443,7 +471,11 @@ async def generate_content(
         post = generate_draft(db, req, client)
         return redirect_with_flash(f"/posts/{post.id}", "Content generated successfully")
     except HTTPException as e:
-        # Re-render form with error
+        # Re-render form with error (show a human message, not the raw detail dict).
+        message = e.detail
+        if isinstance(message, dict):
+            message = message.get("message", message.get("code", "Error"))
+
         profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.name)).scalars().all()
         assets = db.execute(select(MediaAsset).where(MediaAsset.is_active == True).order_by(desc(MediaAsset.imported_at)).limit(50)).scalars().all()
         campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
@@ -458,7 +490,7 @@ async def generate_content(
                 "instagram": ["feed_post", "reel", "story"],
                 "tiktok": ["video", "photo_post"],
             },
-            "error": e.detail,
+            "error": message,
             "form_data": req.model_dump(),
         }, status_code=e.status_code)
     except Exception as e:
@@ -468,6 +500,43 @@ async def generate_content(
 # =========================================================================
 # Content Queue / Posts
 # =========================================================================
+
+@router.post("/generate/random")
+def generate_random_form(
+    request: Request,
+    platform: str = Form(...),
+    campaign: str = Form("auto"),
+    count: int = Form(1),
+    media_type: str = Form(""),
+    include_used: bool = Form(False),
+    seasonal_context: str = Form(""),
+    batch_key: str = Form(""),
+    db: Session = Depends(get_db),
+    client=Depends(get_claude_client),
+):
+    """One click: random unused Dropbox/uploaded asset(s) -> AI looks at them -> drafts to review."""
+    from app.services import AppError
+    from app.services.random_draft import generate_random_drafts
+
+    generation_rate_limit(request)
+    try:
+        req = RandomDraftRequest(
+            platform=platform, campaign=campaign or "auto", count=count, media_type=media_type or None,
+            include_used=include_used, seasonal_context=seasonal_context, batch_key=batch_key or None,
+        )
+        out = generate_random_drafts(db, req, client)
+    except AppError as e:
+        return redirect_with_flash("/generate", e.message, "error")
+    except ValueError as e:  # pydantic validation
+        return redirect_with_flash("/generate", f"Invalid options: {e}", "error")
+    posts, errors = out["posts"], out["errors"]
+    if errors:
+        msg = f"Created {len(posts)} of {req.count} drafts; stopped: {errors[-1]['message']}"
+        return redirect_with_flash("/posts", msg, "error")
+    if len(posts) == 1:
+        return redirect_with_flash(f"/posts/{posts[0].id}", "Random draft created - review it below")
+    return redirect_with_flash("/posts", f"Created {len(posts)} drafts from random assets - review each one")
+
 
 @router.get("/posts", response_class=HTMLResponse)
 async def posts_list(
