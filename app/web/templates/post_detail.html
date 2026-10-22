@@ -17,21 +17,22 @@
     </div>
   </header>
 
+  {% set mode = settings.PUBLISHING_MODE %}
+  {% set mode_text %}{% if mode == 'live' %}Scheduled posts publish automatically while the scheduler runs.{% elif mode == 'dry_run' %}Dry run — nothing is sent to any platform.{% elif mode == 'reminders' %}You'll get a reminder at the planned time; post it yourself and click Mark as posted.{% else %}Approved or scheduled posts are <strong>NOT published automatically</strong> — post manually.{% endif %}{% endset %}
   <div class="banner status-{{ post.status }}">
     {% if post.status == 'draft' %}
-      <strong>Draft.</strong> Approved or scheduled posts are <strong>NOT published automatically</strong> in Phase 1 — post manually.
+      <strong>Draft.</strong> {{ mode_text }}
     {% elif post.status == 'approved' %}
-      <strong>Approved.</strong> This post is <strong>NOT published automatically</strong> in Phase 1 — post manually.
+      <strong>Approved.</strong> {{ mode_text }}
     {% elif post.status == 'scheduled' %}
-      <strong>Scheduled for {{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }} UTC.</strong> This post is <strong>NOT published automatically</strong> in Phase 1 — post manually.
+      <strong>Scheduled for {{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }} UTC.</strong> {{ mode_text }}
     {% elif post.status == 'archived' %}
       Archived.
     {% elif post.status == 'published' %}
       Published.
     {% elif post.status == 'failed' %}
       Failed.
-    {% endif %}
-  </div>
+    {% endif %}</div>
 
   <div class="post-layout">
     <div class="post-main">

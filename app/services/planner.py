@@ -30,6 +30,11 @@ OCCUPIED_STATUSES = [
     PostStatus.publishing.value,
 ]
 
+# Slots end this many minutes before window_end, so a 60 s worker poll (plus
+# publish time) still lands inside the window. ponytail: constant, make it a
+# rule column if Lee ever wants a different margin.
+END_MARGIN_MINUTES = 15
+
 
 @dataclass
 class Slot:
@@ -73,7 +78,7 @@ def validate_rule_values(posts_per_week: int, min_per_day: int, max_per_day: int
     start_m, end_m = minutes(window_start), minutes(window_end)
     if start_m >= end_m:
         fail("window", f"window_start '{window_start}' must be before window_end '{window_end}'")
-    if (end_m - start_m) < (max_per_day - 1) * min_gap_minutes + 1:
+    if (end_m - start_m - END_MARGIN_MINUTES) < (max_per_day - 1) * min_gap_minutes:
         fail("window", f"too short for {max_per_day} posts/day with a {min_gap_minutes} min gap")
     if min_gap_minutes < 0:
         fail("min_gap_minutes", "must be >= 0")
@@ -135,7 +140,7 @@ def make_slots(rule, start_day: date, now: datetime, rng: random.Random,
     tz = window.tz
     start_m = window.start.hour * 60 + window.start.minute
     end_m = window.end.hour * 60 + window.end.minute  # window end is inclusive
-    span = end_m - start_m
+    span = end_m - start_m - END_MARGIN_MINUTES  # slots never in the last 15 min
 
     counts = list(day_targets) if day_targets is not None else _day_counts(rule, rng)
     lead = get_settings().PLANNER_LEAD_MINUTES
@@ -195,23 +200,40 @@ def _plan_post(db: Session, post, slot: Slot) -> None:
     db.add(post)
 
 
-def _take_day(slots: list[Slot], taken: set[int], day: date, platform: str):
-    """Earliest free slot on `day`, else None."""
+def _take(slots: list[Slot], taken: set[int], day: date | None = None):
+    """Earliest free slot (on `day` if given), else None."""
     for slot in slots:
-        if id(slot) in taken or slot.local_day != day:
+        if id(slot) in taken or (day is not None and slot.local_day != day):
             continue
         taken.add(id(slot))
         return slot
     return None
 
 
-def _take_any(slots: list[Slot], taken: set[int], platform: str):
-    for slot in slots:
-        if id(slot) in taken:
-            continue
-        taken.add(id(slot))
-        return slot
-    return None
+def _sibling_day(db: Session, post, tz) -> date | None:
+    """Local day of an already-planned sibling (same group_key, other platform)."""
+    sib = db.execute(
+        select(ContentPost.planned_publish_at).where(
+            ContentPost.group_key == post.group_key,
+            ContentPost.platform != post.platform,
+            ContentPost.planned_publish_at.isnot(None),
+        ).limit(1)
+    ).scalar_one_or_none()
+    return sib.astimezone(tz).date() if sib else None
+
+
+def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
+    """New slots per day such that each day reaches min_per_day, follows the
+    weekly pattern, stays <= max_per_day, and the 7-day total (occupied +
+    new) never exceeds posts_per_week - even when re-planning a part-filled week."""
+    budget = max(0, rule.posts_per_week - sum(occupied))
+    targets = [0] * 7
+    for cap in ([rule.min_per_day] * 7, pattern, [rule.max_per_day] * 7):
+        for i in range(7):
+            add = min(max(0, cap[i] - occupied[i] - targets[i]), budget)
+            targets[i] += add
+            budget -= add
+    return targets
 
 
 def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None,
@@ -235,8 +257,10 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
     occupied = _occupied_per_day(db, rule, week_days)
 
     # Day targets reduced by posts that are already scheduled/published
-    pattern = _day_counts(rule, rng)
-    targets = [max(0, pattern[i] - occupied[d]) for i, d in enumerate(week_days)]
+    # One day pattern per (profile, week), shared by every platform, so mirrored
+    # siblings find a slot on the same day (Lee: same 10 posts on each platform).
+    pattern = _day_counts(rule, random.Random(f"{rule.model_profile_id}:{start_day.isoformat()}"))
+    targets = _day_targets(rule, pattern, [occupied[d] for d in week_days])
     slots = make_slots(rule, start_day, now, rng, day_targets=targets)
 
     result = PlanResult(slots=slots)
@@ -254,57 +278,29 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
         ).order_by(ContentPost.created_at.asc())
     ).scalars().all()
 
-    singletons = [p for p in candidates if not p.group_key]
-    groups: dict[str, list] = {}
+    # Mirrored groups first (oldest group first), then singletons (oldest first):
+    # both platforms walk their groups in the same order over the same day
+    # pattern, and a post whose sibling is already planned is pinned to that day.
+    group_age: dict[str, datetime] = {}
     for p in candidates:
         if p.group_key:
-            groups.setdefault(p.group_key, []).append(p)
-    # group order = oldest member first
-    ordered_groups = sorted(groups.values(), key=lambda ms: min(m.created_at for m in ms))
-
-    # ---- Singletons: earliest slot first
-    for post in singletons:
-        slot = _take_any(slots, taken, post.platform)
+            group_age[p.group_key] = min(group_age.get(p.group_key, p.created_at), p.created_at)
+    ordered = sorted(
+        candidates,
+        key=lambda p: (0, group_age[p.group_key], p.created_at) if p.group_key else (1, p.created_at, p.created_at),
+    )
+    for post in ordered:
+        day = _sibling_day(db, post, tz) if post.group_key else None
+        slot = _take(slots, taken, day) if day else None
+        if slot is None:
+            if day is not None:
+                logger.warning("planner: no free %s slot on %s for group %s; using next free slot",
+                               post.platform, day, post.group_key)
+            slot = _take(slots, taken)
         if slot is None:
             break
         _plan_post(db, post, slot)
         result.filled.append(slot)
-
-    # ---- Groups (mirroring): same local day on each platform
-    for members in ordered_groups:
-        member_slots: dict[int, Slot] = {}
-        # earliest local day with a free slot for the first member's platform
-        days = sorted({s.local_day for s in slots if id(s) not in taken})
-        assigned_together = False
-        for day in days:
-            picks = {}
-            ok = True
-            trial: set[int] = set(taken)
-            for m in members:
-                # keep platforms distinct within the group
-                slot = _take_day(slots, trial, day, m.platform)
-                if slot is None:
-                    ok = False
-                    break
-                picks[id(m)] = slot
-            if ok:
-                taken = trial
-                member_slots = picks
-                assigned_together = True
-                break
-        if not assigned_together:
-            # No common day: fill each member independently (earliest slot)
-            for m in members:
-                slot = _take_any(slots, taken, m.platform)
-                if slot is not None:
-                    member_slots[id(m)] = slot
-
-        for m in members:
-            slot = member_slots.get(id(m))
-            if slot is None:
-                continue
-            _plan_post(db, m, slot)
-            result.filled.append(slot)
 
     result.unfilled = [s for s in slots if id(s) not in taken]
 

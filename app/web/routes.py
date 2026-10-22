@@ -33,6 +33,7 @@ templates = Jinja2Templates(directory="app/web/templates")
 def _template_response(template_name: str, context: dict, status_code: int = 200):
     """New-style TemplateResponse wrapper (starlette >= 1.0 signature)."""
     request = context.get("request")
+    context.setdefault("settings", get_settings())  # mode badge / banners in every page
     return templates.TemplateResponse(
         request=request, name=template_name, context=context, status_code=status_code
     )
@@ -92,12 +93,18 @@ async def overview(
         .limit(7)
     ).scalars().all()
 
+    from app.services.scheduler import worker_status
+
+    worker_last_seen, worker_ok = worker_status(db)
+
     return _template_response("overview.html", {
         "request": request,
         "stats": dashboard_stats,
         "recent_posts": recent_posts,
         "upcoming": upcoming,
         "flash": get_flash(request),
+        "worker_last_seen": worker_last_seen,
+        "worker_ok": worker_ok,
     })
 
 

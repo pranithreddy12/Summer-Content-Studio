@@ -14,6 +14,14 @@ from app.main import create_app
 from app.seed import seed_all
 
 
+# Credentials blanked for every test run (env beats .env in pydantic-settings)
+ISOLATED_KEYS = [
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY",
+    "PUBLIC_BASE_URL", "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET",
+    "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+]
+
+
 @pytest.fixture(scope="session")
 def settings(tmp_path_factory) -> Generator:
     """Configure settings with test environment variables."""
@@ -31,6 +39,11 @@ def settings(tmp_path_factory) -> Generator:
     os.environ["APP_TIMEZONE"] = "UTC"
     os.environ["DASHBOARD_USERNAME"] = ""
     os.environ["DASHBOARD_PASSWORD"] = ""
+    # Phase 2: tests never post or push for real, whatever the developer's .env says
+    os.environ["PUBLISHING_MODE"] = "off"
+    os.environ["NOTIFY_PROVIDER"] = "none"
+    for secret in ISOLATED_KEYS:
+        os.environ[secret] = ""
 
     clear_settings_cache()
 
@@ -41,7 +54,8 @@ def settings(tmp_path_factory) -> Generator:
     yield get_settings()
 
     clear_settings_cache()
-    for key in ["DATABASE_URL", "MEDIA_UPLOAD_DIR", "MEDIA_SYNC_DIR", "ANTHROPIC_API_KEY", "MISTRAL_API_KEY", "LLM_PROVIDER"]:
+    for key in ["DATABASE_URL", "MEDIA_UPLOAD_DIR", "MEDIA_SYNC_DIR", "ANTHROPIC_API_KEY", "MISTRAL_API_KEY", "LLM_PROVIDER",
+                "PUBLISHING_MODE", "NOTIFY_PROVIDER", *ISOLATED_KEYS]:
         os.environ.pop(key, None)
 
 

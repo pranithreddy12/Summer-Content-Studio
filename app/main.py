@@ -221,24 +221,12 @@ def create_app() -> FastAPI:
         except Exception:
             pass
 
-        worker_last_seen = None
-        worker_ok = False
-        try:
-            from datetime import datetime, timezone as _tz
+        from sqlalchemy.orm import Session as _Session
 
-            from sqlalchemy import select as _select
-            from sqlalchemy.orm import Session as _Session
+        from app.services.scheduler import worker_status
 
-            from app.models import WorkerHeartbeat
-
-            with _Session(bind=engine, expire_on_commit=False) as hb_session:
-                hb = hb_session.execute(_select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
-                if hb is not None:
-                    worker_last_seen = hb.last_seen.replace(tzinfo=_tz.utc).isoformat()
-                    age = (datetime.now(_tz.utc) - hb.last_seen.replace(tzinfo=_tz.utc)).total_seconds()
-                    worker_ok = age < 300  # 5 min (PLAN §5)
-        except Exception:
-            pass  # table may not exist yet on a fresh Phase-1 DB
+        with _Session(bind=engine) as hb_session:
+            worker_last_seen, worker_ok = worker_status(hb_session)
 
         return {
             "status": "ok" if db_ok else "degraded",
@@ -251,7 +239,7 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
         }
 
-    from app.api import profiles, assets, content, posts, tags, planner
+    from app.api import profiles, assets, content, posts, tags, planner, notifications
     from app.web import routes as web_routes
 
     app.include_router(profiles.router, prefix="/api/v1")
@@ -260,6 +248,7 @@ def create_app() -> FastAPI:
     app.include_router(posts.router, prefix="/api/v1")
     app.include_router(tags.router, prefix="/api/v1")
     app.include_router(planner.router, prefix="/api/v1")
+    app.include_router(notifications.router, prefix="/api/v1")
     app.include_router(web_routes.router)
 
     # Static files

@@ -115,6 +115,16 @@ class Settings(BaseSettings):
             raise ValueError("must be >= 0")
         return v
 
+    @field_validator(
+        "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET",
+        "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+        "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", mode="before",
+    )
+    @classmethod
+    def _empty_is_unset(cls, v):
+        # `KEY=` (copied from .env.example, or blanked by tests) means "not configured"
+        return None if isinstance(v, str) and v.strip() == "" else v
+
     @field_validator("MEDIA_SYNC_DIR", mode="before")
     @classmethod
     def _coerce_empty_sync_dir(cls, v):

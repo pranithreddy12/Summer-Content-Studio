@@ -11,6 +11,7 @@
     <div class="page-actions">
       <a href="/generate" class="btn btn-primary">Generate draft</a>
       <a href="/posts" class="btn">Open queue</a>
+      <span class="mode-badge">{% if settings.PUBLISHING_MODE == 'off' %}Phase 1{% elif settings.PUBLISHING_MODE == 'reminders' %}Reminders{% elif settings.PUBLISHING_MODE == 'dry_run' %}Dry run{% else %}Live{% endif %} mode</span>
     </div>
   </header>
 
@@ -37,9 +38,16 @@
     </div>
   </div>
 
+  {% if settings.PUBLISHING_MODE != 'off' and not worker_ok and stats.scheduled > 0 %}
+  <div class="banner banner-critical" style="margin-top:16px;">
+    <p><strong>Scheduler is not running</strong> — scheduled posts will not publish. Last seen: {{ worker_last_seen or 'never' }}.
+    Start it with <code>python -m app.cli worker</code>.</p>
+  </div>
+  {% endif %}
+
   <section class="section">
     <div class="section-head">
-      <h2>Posts by platform &amp; status</h2>
+      <h2>Posts by platform & status</h2>
       <span class="section-note">Counts exclude nothing — archived included.</span>
     </div>
     <div class="table-wrap card">
@@ -147,4 +155,4 @@
     {% endif %}
   </section>
 </div>
-{% endblock %}
+{% endblock %}

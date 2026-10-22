@@ -105,5 +105,70 @@ def plan_week(profile_id: int, platform: str, seed) -> None:
             day = day + timedelta(days=1)
 
 
+@cli.command()
+@click.option("--once", "once", is_flag=True, help="Run one iteration and exit (for tests).")
+def worker(once) -> None:
+    """The one background process: poll the DB, publish/remind per PUBLISHING_MODE."""
+    import time
+
+    from app.db import get_session_factory, utcnow
+    from app.logging_setup import configure_logging
+    from app.services.scheduler import run_once
+
+    configure_logging()
+    settings = get_settings()
+    interval = settings.WORKER_INTERVAL_SECONDS
+
+    if settings.PUBLISHING_MODE == "live" and not settings.live_publishing_ready:
+        click.echo(
+            "PUBLISHING_MODE=live needs PUBLIC_BASE_URL (https://), TOKEN_ENCRYPTION_KEY "
+            "and MEDIA_URL_SECRET. Refusing to start (PLAN §2).",
+            err=True,
+        )
+        sys.exit(1)
+    if settings.PUBLISHING_MODE == "reminders" and not settings.notify_configured:
+        click.echo(
+            f"PUBLISHING_MODE=reminders needs a push channel: NOTIFY_PROVIDER={settings.NOTIFY_PROVIDER} "
+            "has no credentials. Refusing to start (PLAN §9b).",
+            err=True,
+        )
+        sys.exit(1)
+
+    click.echo(f"Worker started: interval={interval}s mode={settings.PUBLISHING_MODE}")
+    try:
+        while True:
+            db = get_session_factory()()
+            try:
+                result = run_once(db, utcnow())
+                click.echo(f"worker: {result}")
+            except Exception as e:  # one bad iteration never kills the worker
+                click.echo(f"worker iteration failed: {e}", err=True)
+            finally:
+                db.close()
+            if once:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        click.echo("Worker stopped cleanly.")
+
+
+@cli.command()
+def notify_test() -> None:
+    """Send a test push via the configured NOTIFY_PROVIDER."""
+    from app.services.notifications import configured, send_test
+
+    settings = get_settings()
+    if not configured(settings):
+        click.echo(
+            f"NOTIFY_PROVIDER={settings.NOTIFY_PROVIDER} has no credentials set. "
+            "See .env.example (PLAN §9b).",
+            err=True,
+        )
+        sys.exit(1)
+    with session_scope() as db:
+        ok = send_test(db)
+    click.echo("Test notification sent." if ok else "Provider refused - check the log.")
+
+
 if __name__ == "__main__":
     cli()

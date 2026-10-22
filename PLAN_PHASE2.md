@@ -12,6 +12,7 @@
 | v1 | 2026-10-17 | First plan (Instagram, TikTok, X). |
 | v2 / v2.1 | 2026-10-20/21 | Client answers: X dropped; TikTok inbox first; weekly planner; push notifications; Dropbox copy via rclone; 10 posts/week **per platform, mirrored**; hard window 08:00–21:00 (tz `Europe/London`, ⚠ confirm); Creator account confirmed; Lee rents server/domain himself; Anthropic key chosen (pending). |
 | **v3** | 2026-10-21 | **Build-now restructure.** New §0a readiness matrix; milestones split into **offline build B0–B8** and **live L1–L6**; new **`PUBLISHING_MODE`** (`off` / `reminders` / `dry_run` / `live`) replaces the on/off kill switch; **manual-reminder mode** (Halloween helper: push at slot time → human posts → *Mark as posted*); **dry-run mode** (worker proves the pipeline without touching any platform); **posting-window utilities** as a shared service; **API-notes rule** (verify every platform call against official docs before coding it, record in `docs/PLATFORM_API_NOTES.md`); optional **L0 developer-live path** (own test accounts + tunnel + ntfy) so live proof does not have to wait for Lee. |
+| **v3.1** | 2026-10-22 | **Validation patch** (defects found building B1–B3): mirroring made real (shared day pattern + sibling pinning), weekly budget, window end margin, retryable notifications, reminder semantics, blank-env = unset, test isolation, Halloween deployment caveat. |
 
 ---
 
@@ -197,6 +198,7 @@ docs/ PLATFORM_API_NOTES.md (rule 10), PLATFORM_SETUP.md (click-by-click for a n
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | `SecretStr` / `str` | None | Bot created via BotFather by Lee. |
 | `NTFY_SERVER` / `NTFY_TOPIC` | `str` / `SecretStr` | `https://ntfy.sh` / None | Topic = effectively a password: long random string. **Use ntfy on the developer's own phone to live-test pushes today.** |
 | `PUSHOVER_APP_TOKEN` / `PUSHOVER_USER_KEY` | `SecretStr` | None | |
+| *(all credential vars)* | | | **Blank value (`KEY=`) = unset** (validator); tests set them blank, `PUBLISHING_MODE=off`, `NOTIFY_PROVIDER=none` for the whole session (v3.1). |
 | `MIN_FREE_DISK_GB` | float | `2` | `cli sync-media` refuses (and notifies) below this. |
 
 Posting rules (posts per week, window, timezone) are **data** (`posting_rules` table, §6), not env.
@@ -426,7 +428,7 @@ def run_once(db, now, http) -> dict:   # returns counts, used by tests and heart
          AND now inside the rule's window (enforce_window) ; order by planned_publish_at, limit 10
          mode live     → publish_post(trigger="schedule"/"retry")
          mode dry_run  → publish_post (dry-run branch)
-         mode reminders→ if reminded_at IS NULL: notify("post_due", key=f"due:{post_id}") then set reminded_at (post stays scheduled)
+         mode reminders→ if reminded_at IS NULL: notify("post_due", key=f"due:{post_id}") and set reminded_at **only if the push was sent** (failed push → retried next loop; post stays scheduled). Push body = full `render_caption(post)` (+ "Mark as posted" hint) so it is usable from a phone without the dashboard. No push channel configured → nothing sent, counted as `skipped`, and `cli worker` **refuses to start** in `reminders` mode without one.
        one failure never stops the loop
     4. token refresh (live only): accounts expiring within 24 h (IG: within 7 days) → refresh; failure → status expired + last_error + account_attention push
     5. planner tick (if AUTO_PLAN_ENABLED): once per local day at PLANNER_RUN_HOUR per active rule → planner.plan_week(...) (§9a)
@@ -463,7 +465,9 @@ def plan_week(db, rule, now, rng=None, start_day=None) -> PlanResult   # PlanRes
 4. Slots left without a post = `unfilled`. If `rule.auto_topup` and cap > 0: call `random_draft.generate_random_drafts(...)` (Phase 1 service; random **unused** uploaded/synced assets; AI sees them) — **drafts only, never approved** — then `approval_needed` push. Cap is per local day.
 5. Unfilled slots within 48 h of the first one → `slots_unfilled` push (deduped per day).
 6. Never touches posts where `planned_by='user'` or status ≥ `publishing`.
-7. **Mirroring:** approved posts sharing a `group_key` are assigned to the **same local day on each platform** (own random time inside the window and gap). `random_draft` gains `both_platforms`: for each random **video** asset create an Instagram + TikTok pair sharing a `group_key` (captions generated per platform), still **drafts only**. Images produce an Instagram draft only (TikTok inbox = video only) until photo posts exist.
+7. **Mirroring (v3.1 — how it actually works):** the 7-day *day pattern* (which days get 2) is drawn from `Random(f"{profile_id}:{start_day}")`, **not** from the caller's rng, so every platform of a profile gets the same pattern for the same week; groups are planned oldest-group-first before singletons; a post whose sibling is already planned is **pinned to the sibling's local day** (fallback to the next free slot with a log warning). Each platform keeps its own random times. Test: 10 IG+TikTok pairs → every pair on one local day. `random_draft` gains `both_platforms`: for each random **video** asset create an Instagram + TikTok pair sharing a `group_key` (captions generated per platform), still **drafts only**. Images produce an Instagram draft only (TikTok inbox = video only) until photo posts exist.
+7a. **Weekly budget (v3.1):** per-day targets = min_per_day first, then the pattern, then up to max_per_day, **capped so already-occupied + new ≤ `posts_per_week`** for the 7-day window. Re-planning a part-filled week can never exceed 10. The week is **rolling**: the daily run plans the 7 days starting tomorrow; occupied posts in that window count against the budget.
+7b. **End margin (v3.1):** slots are drawn from `[window_start, window_end − 15 min]` (`END_MARGIN_MINUTES`) so a 60 s worker poll + publish time never crosses 21:00; `validate_rule_values` accounts for it.
 
 **Rule validation** (service + API, 422): `1 ≤ posts_per_week ≤ 28`; `min_per_day ≤ max_per_day ≤ 4`; `posts_per_week ≥ 7·min_per_day` and `≤ 7·max_per_day`; `window_start < window_end`; window long enough for `max_per_day` posts with the gap; valid IANA timezone.
 
@@ -477,7 +481,7 @@ def plan_week(db, rule, now, rng=None, start_day=None) -> PlanResult   # PlanRes
 def notify(db, event: str, key: str, title: str, body: str = "", url: str | None = None, http=None) -> bool
 # never raises; True if a push was sent
 ```
-- **Dedupe:** insert into `notifications(event_key unique)` first; duplicate → return False. Keys are deterministic, so a worker restart cannot re-send.
+- **Dedupe (v3.1):** one `notifications` row per `event_key`. A key whose push was **sent** (or logged `disabled`) is final → `False`. A key whose send **failed** is retried on the next call (same row), so an outage never loses a `post_due`/`publish_failed` push; deterministic keys still stop a restart from re-sending a delivered push.
 - **Providers** (one small `httpx` function each, `MockTransport`-tested):
   - `telegram`: `POST https://api.telegram.org/bot<token>/sendMessage` `{chat_id, text, disable_web_page_preview: true}`
   - `ntfy`: `POST {NTFY_SERVER}/{NTFY_TOPIC}` body = text, headers `Title`, `Click` (url), `Priority`
@@ -571,7 +575,7 @@ OAuth callback routes live under `/oauth/...` (no `/api/v1` prefix) because the 
 | Overview | (edit) | Cards: failed (red), published last 7 days, unfilled slots next 7 days; mode badge; worker banner (§9); engagement totals. |
 | Generator | (edit) | "Surprise me" card gains **"Create Instagram + TikTok pair"** (`both_platforms`). |
 
-Forms stay plain HTML + PRG + `?msg=`. Inline JS only for confirm dialogs, clipboard copy, and the **submit-event** button disabling pattern (never disable a submit button in a click handler — Phase 1 lesson). The dashboard must be **usable on a phone** (Lee approves from his phone): single-column below ~700 px, tap targets ≥ 44 px; verify with a 375 px viewport.
+Forms stay plain HTML + PRG + `?msg=`. Inline JS only for confirm dialogs, clipboard copy, and the **submit-event** button disabling pattern (never disable a submit button in a click handler — Phase 1 lesson). The dashboard must be **usable on a phone** (Lee approves from his phone): single-column below ~700 px, tap targets ≥ 44 px; verify with a 375 px viewport **and record a screenshot path or Playwright check in `PROGRESS.md` — no evidence, not done (B2 claimed this without any).**
 
 ---
 
@@ -653,7 +657,7 @@ Command unchanged: `python -m pytest`. Real counts in each milestone summary (ba
 
 **B2 — Planner.** `services/planner.py`, `posting_rules` API + `/planner` page + `cli plan-week`, calendar page, mirroring (`group_key`) and `random_draft both_platforms` + the "Create Instagram + TikTok pair" button. **Done when:** `test_planner.py` property tests green; on a scratch DB with ~20 approved drafts "Plan next 7 days" yields exactly 10 slots/platform matching Lee's pattern, all inside 08:00–21:00; running it twice changes nothing; the week grid renders on a 375 px viewport.
 
-**B3 — Notifications + reminder mode (Halloween helper).** `services/notifications.py` (all providers), dedupe table, `cli notify-test`, notification API, `post_due` reminders in the worker (`reminders` mode) + the minimal `cli worker` loop (heartbeat, modes `off`/`reminders`/`dry_run` skeleton), overview mode badge + worker banner. **Done when:** tests green; **live today:** a real push arrives on the developer's phone via **ntfy** and a scratch-DB scheduled post triggers exactly one `post_due` push at its slot (inside the window, none outside). Telegram path is mock-proven; live later (L5).
+**B3 — Notifications + reminder mode (Halloween helper).** `services/notifications.py` (all providers), dedupe table, `cli notify-test`, notification API, `post_due` reminders in the worker (`reminders` mode) + the minimal `cli worker` loop (heartbeat, modes `off`/`reminders`/`dry_run` skeleton), overview mode badge + worker banner. **Halloween caveat (v3.1):** reminders need the worker running 24/7 and a phone-reachable dashboard to click *Mark as posted*. A sleeping laptop sends nothing — before 31 Oct either run the worker on an always-on machine/cheap VPS (L1 can be a bare server with Basic auth, no domain needed for ntfy-only use) or accept that the push (with the full caption) is the whole helper and *Mark as posted* is done later. **Done when:** tests green; **live today:** a real push arrives on the developer's phone via **ntfy** and a scratch-DB scheduled post triggers exactly one `post_due` push at its slot (inside the window, none outside). Telegram path is mock-proven; live later (L5).
 
 **B4 — Platform modules + API notes.** First `docs/PLATFORM_API_NOTES.md` (rule 10: fetch the official Instagram and TikTok docs, record endpoints/params/samples/URLs/dates, mark each `VERIFIED-DOC`/`UNVERIFIED`), then `platforms/{instagram,tiktok}.py` (all §7 functions), `PlatformError` mapping, and platform tests with doc-derived fixtures. **Done when:** platform tests green; every `UNVERIFIED` item is listed in the L-milestone checklists.
 

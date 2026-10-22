@@ -90,15 +90,25 @@ def notify(db: Session, event: str, key: str, title: str, body: str = "",
     settings = get_settings()
     provider = settings.NOTIFY_PROVIDER
 
-    # 1. Delivery log first (event_key unique) -> worker restarts cannot re-send
-    log = NotificationLog(event=event, event_key=key[:120], provider=provider,
-                          success=False, error_category=None)
-    db.add(log)
-    try:
-        db.commit()
-    except IntegrityError:  # duplicate event_key: already sent
-        db.rollback()
-        return False
+    # 1. Delivery log first (event_key unique) -> worker restarts cannot re-send.
+    #    A key whose earlier send FAILED is retried (same row); sent or
+    #    "disabled" keys are final. ponytail: retries on every worker loop while
+    #    the caller keeps asking; add backoff if a provider outage gets noisy.
+    key = key[:120]
+    log = db.execute(select(NotificationLog).where(NotificationLog.event_key == key)).scalar_one_or_none()
+    if log is not None:
+        if log.success or log.error_category == "disabled":
+            return False
+        log.provider = provider
+    else:
+        log = NotificationLog(event=event, event_key=key, provider=provider,
+                              success=False, error_category=None)
+        db.add(log)
+        try:
+            db.commit()
+        except IntegrityError:  # concurrent insert of the same key
+            db.rollback()
+            return False
 
     if provider == "none" or not settings.notify_configured:
         # log-only: success stays False, marked "disabled" (PLAN §9b)
