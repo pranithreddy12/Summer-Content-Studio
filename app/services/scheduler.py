@@ -11,7 +11,7 @@ run_once stages (each isolated: one failing stage never stops the others):
   live       -> refresh tokens that are close to expiry
   not off    -> planner tick (AUTO_PLAN_ENABLED)
   always     -> heartbeat
-Engagement sync joins in B7.
+  live       -> Instagram metrics/comments sync (every few minutes)
 """
 
 import logging
@@ -41,8 +41,9 @@ def _heartbeat(db, result: dict, now) -> None:
         db.add(hb)
     else:
         prev = hb.last_result or {}
-        if "planner_ran" not in result and "planner_ran" in prev:
-            result["planner_ran"] = prev["planner_ran"]
+        for key in ("planner_ran", "engagement_at"):   # state that must survive loops that do not touch it
+            if key not in result and key in prev:
+                result[key] = prev[key]
         hb.last_seen = now
         hb.last_result = result
     db.commit()
@@ -209,6 +210,18 @@ def refresh_due_tokens(db, now: datetime, http) -> dict:
     return out
 
 
+def engagement_stage(db, now: datetime, http, result: dict) -> None:
+    """Instagram metrics + comments every few minutes (live mode). Last run time lives in the heartbeat row."""
+    from app.services import engagement
+
+    hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
+    last = (hb.last_result or {}).get("engagement_at") if hb else None
+    if last and now - datetime.fromisoformat(last) < engagement.SYNC_EVERY:
+        return
+    result["engagement_at"] = now.isoformat()   # set first: a failing sync is not retried every minute
+    result["engagement"] = engagement.sync(db, now, http)
+
+
 def planner_tick(db, now: datetime, state: dict) -> dict:
     """AUTO_PLAN_ENABLED: once per local day, from PLANNER_RUN_HOUR on, plan the next 7 days for every
     active rule. `state` maps rule id -> last local day planned (persisted in the heartbeat row)."""
@@ -268,6 +281,8 @@ def run_once(db, now, http=None) -> dict:
         stage("publish", lambda: publish_due(db, now, http, mode, result))
     if mode == "live":
         stage("refresh_tokens", lambda: result.__setitem__("tokens", refresh_due_tokens(db, now, http)))
+    if mode == "live":
+        stage("engagement", lambda: engagement_stage(db, now, http, result))
     if settings.AUTO_PLAN_ENABLED:
         def tick() -> None:
             hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()

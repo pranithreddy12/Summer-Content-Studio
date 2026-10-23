@@ -35,7 +35,11 @@
     <div class="stat">
       <div class="stat-value">{{ stats.scheduled }}</div>
       <div class="stat-label">Scheduled</div>
+      <div class="stat">
+      <div class="stat-value">{{ unanswered }}</div>
+      <div class="stat-label"><a href="/engagement">Comments to answer</a></div>
     </div>
+  </div>
   </div>
 
   {% if settings.PUBLISHING_MODE != 'off' and not worker_ok and stats.scheduled > 0 %}
@@ -155,4 +159,4 @@
     {% endif %}
   </section>
 </div>
-{% endblock %}
+{% endblock %}

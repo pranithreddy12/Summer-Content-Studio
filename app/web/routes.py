@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.dependencies import get_platform_http
+from app.api.dependencies import get_claude_client, get_platform_http
 from app.config import get_settings
 from app.db import get_db, utcnow
 from app.models import (
@@ -67,6 +67,12 @@ def get_settings_dep():
 # Overview / Dashboard
 # =========================================================================
 
+def _unanswered(db) -> int:
+    from app.services.engagement import unanswered_count
+
+    return unanswered_count(db)
+
+
 @router.get("/", response_class=HTMLResponse)
 async def overview(
     request: Request,
@@ -106,6 +112,7 @@ async def overview(
         "flash": get_flash(request),
         "worker_last_seen": worker_last_seen,
         "worker_ok": worker_ok,
+        "unanswered": _unanswered(db),
     })
 
 
@@ -620,12 +627,14 @@ async def post_detail(
     campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
     all_tags = db.execute(select(Tag).order_by(Tag.name)).scalars().all()
 
+    from app.services.engagement import latest_metrics
     from app.services.publishing import list_attempts, preflight_reasons
 
     return _template_response("post_detail.html", {
         "request": request,
         "post": post,
         "attempts": list_attempts(db, post_id),
+        "metrics": latest_metrics(db, post_id),
         "preflight": preflight_reasons(db, post, utcnow()) if post.status in ("approved", "scheduled", "failed") else [],
         "variants": variants,
         "campaigns": campaigns,
@@ -1161,3 +1170,88 @@ async def accounts_notify_test(db: Session = Depends(get_db)):
     ok = send_test(db)
     return redirect_with_flash("/accounts", "Test notification sent." if ok else "The provider refused the test push.",
                                "ok" if ok else "error")
+
+
+# =========================================================================
+# Phase 2 B7: engagement (Instagram comments, human-sent replies)
+# =========================================================================
+
+_ENGAGEMENT_FILTERS = {"open": ["none", "drafted"], "sent": ["sent"], "ignored": ["ignored"], "all": None}
+
+
+@router.get("/engagement", response_class=HTMLResponse)
+async def engagement_page(request: Request, status: str = "open", post_id: Optional[int] = None,
+                          db: Session = Depends(get_db)):
+    from app.services import engagement as svc
+
+    status = status if status in _ENGAGEMENT_FILTERS else "open"
+    res = svc.list_comments(db, "instagram", post_id, _ENGAGEMENT_FILTERS[status], limit=50)
+    return _template_response("engagement.html", {
+        "request": request, "comments": res["items"], "total": res["total"], "status": status, "post_id": post_id,
+        "totals": svc.totals_7d(db, utcnow()), "unanswered": svc.unanswered_count(db),
+        "flash": get_flash(request),
+    })
+
+
+def _engagement_redirect(msg: str, kind: str = "ok", status: str = "open"):
+    return redirect_with_flash(f"/engagement?status={status}", msg, kind)
+
+
+@router.post("/engagement/sync")
+def engagement_sync(db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import engagement as svc
+
+    if get_settings().PUBLISHING_MODE != "live":
+        return _engagement_redirect("Comment sync runs in live mode only.", "error")
+    try:
+        out = svc.sync(db, utcnow(), http)
+    except AppError as e:
+        return _engagement_redirect(e.message, "error")
+    return _engagement_redirect(f"Checked {out['posts']} post(s): {out['new_comments']} new comment(s)"
+                                + (f", {out['errors']} problem(s)" if out["errors"] else "") + ".")
+
+
+@router.post("/engagement/{comment_id}/draft")
+def engagement_draft(request: Request, comment_id: int, instructions: str = Form(""), db: Session = Depends(get_db),
+                     client=Depends(get_claude_client)):
+    from app.services import AppError
+    from app.services import engagement as svc
+    from app.services.claude_client import GenerationError
+
+    generation_rate_limit(request)
+    try:
+        _, suggest_ignore = svc.draft_reply(db, comment_id, client, instructions[:300])
+    except GenerationError as e:
+        return _engagement_redirect(e.message, "error")
+    except AppError as e:
+        return _engagement_redirect(e.message, "error")
+    if suggest_ignore:
+        return _engagement_redirect("No safe reply could be drafted for this comment - consider ignoring it.", "error")
+    return _engagement_redirect("Draft ready - read it, edit it, then press Send reply.")
+
+
+@router.post("/engagement/{comment_id}/send")
+def engagement_send(request: Request, comment_id: int, text: str = Form(""), db: Session = Depends(get_db),
+                    http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import engagement as svc
+
+    generation_rate_limit(request)
+    try:
+        svc.send_reply(db, comment_id, text, http)
+    except AppError as e:
+        return _engagement_redirect(e.message, "error")
+    return _engagement_redirect("Reply sent.")
+
+
+@router.post("/engagement/{comment_id}/ignore")
+async def engagement_ignore(comment_id: int, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import engagement as svc
+
+    try:
+        svc.ignore_comment(db, comment_id)
+    except AppError as e:
+        return _engagement_redirect(e.message, "error")
+    return _engagement_redirect("Comment ignored.")

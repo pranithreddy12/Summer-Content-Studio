@@ -140,3 +140,10 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - **Planner tick state** (last local day per rule) is stored in the single heartbeat row's JSON instead of a new table; `_heartbeat` carries it forward. Planner ticks do not run in `off` mode.
 - **Throttles are in memory** (token refresh retry every 30 min): the worker is a single process; a restart simply tries once more.
 - **Shutdown**: SIGINT/SIGTERM/SIGBREAK set an event; the running iteration finishes, the sleep is interruptible.
+
+## Phase 2 B7 decisions (2026-10-23)
+- **No new LLM client code for replies**: the existing 6-field schema carries the reply in `caption`; works with Claude (JSON schema) and Mistral (JSON object) alike. `generation_logs` rows use `purpose='reply'`, prompt version `reply_v1`, and never store prompt/response text.
+- **Replies are never automatic**: sync and draft cannot write to Instagram; sending is one POST per comment, live mode only, atomic claim so a double click cannot send twice.
+- **Only API-published Instagram posts are tracked** for metrics/comments; TikTok has no comment/metric access for this app type (UI says so).
+- **Digest is hourly by key** (`comments:instagram:YYYYMMDDHH`): simple and restart-safe, at the cost of delaying later comments in the same hour.
+- **Layout fix found during the 375 px check**: `.shell { grid-template-columns: 1fr }` let any wide table stretch the whole page (overview was 641 px wide on a 375 px phone). Now `minmax(0, 1fr)`.

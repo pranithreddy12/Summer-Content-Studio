@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Engagement — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Instagram</span>
+      <h1>Engagement</h1>
+      <p class="page-lede">New comments on your published posts. Replies are drafted by the AI but <strong>only sent when you press Send</strong>, one comment at a time. TikTok comments are not available to this app.</p>
+    </div>
+    <div class="page-actions">
+      <form method="post" action="/engagement/sync" class="inline-form"><button type="submit" class="btn" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}>Refresh now</button></form>
+    </div>
+  </header>
+
+  {% if settings.PUBLISHING_MODE != 'live' %}
+  <div class="banner banner-info"><p>Comment sync and sending replies work in <strong>live</strong> mode with a connected Instagram account. Nothing is sent from here otherwise.</p></div>
+  {% endif %}
+
+  <div class="stat-grid">
+    <div class="stat stat-accent"><div class="stat-value">{{ unanswered }}</div><div class="stat-label">Unanswered comments</div></div>
+    <div class="stat"><div class="stat-value">{{ totals.likes }}</div><div class="stat-label">Likes · posts of the last 7 days</div></div>
+    <div class="stat"><div class="stat-value">{{ totals.comments }}</div><div class="stat-label">Comments · posts of the last 7 days</div></div>
+  </div>
+  {% if totals.posts and totals.tracked < totals.posts %}<p class="small">Metrics are tracked for {{ totals.tracked }} of {{ totals.posts }} posts published in the last 7 days (only posts published through the API are tracked).</p>{% endif %}
+
+  <nav class="tabs" style="margin:16px 0;">
+    {% for key, label in [('open', 'Needs a reply'), ('sent', 'Replied'), ('ignored', 'Ignored'), ('all', 'All')] %}
+    <a class="btn btn-sm {% if status == key %}btn-primary{% endif %}" href="/engagement?status={{ key }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if not comments %}
+  <div class="card" style="padding:24px;"><p>Nothing here{% if status == 'open' %} — no comments are waiting for a reply{% endif %}.</p></div>
+  {% endif %}
+
+  {% for c in comments %}
+  <div class="card" style="padding:16px;margin-bottom:12px;" id="comment-{{ c.id }}">
+    <p class="small"><strong>@{{ c.author_username or 'unknown' }}</strong>
+      {% if c.commented_at %}· {{ c.commented_at.strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}
+      · on <a href="/posts/{{ c.post_id }}">post #{{ c.post_id }}</a>
+      · <span class="badge badge-{{ 'approved' if c.reply_status == 'sent' else 'draft' }}">{{ c.reply_status }}</span></p>
+    <p style="font-size:1.05em;">{{ c.text }}</p>
+
+    {% if c.reply_status == 'sent' %}
+    <p class="small">Your reply:</p>
+    <blockquote>{{ c.reply_text }}</blockquote>
+    {% elif c.reply_status == 'sending' %}
+    <p class="small">Sending… If this stays here, check Instagram and press Ignore.</p>
+    <form method="post" action="/engagement/{{ c.id }}/ignore" class="inline-form"><button type="submit" class="btn btn-sm">Ignore</button></form>
+    {% else %}
+    <form method="post" action="/engagement/{{ c.id }}/send">
+      <div class="form-group">
+        <label for="reply-{{ c.id }}">Reply {% if c.reply_status == 'drafted' %}<span class="small">(AI draft — edit freely)</span>{% endif %}</label>
+        <textarea name="text" id="reply-{{ c.id }}" rows="3" maxlength="1000" placeholder="Write a reply, or press Draft with AI">{{ c.reply_text }}</textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}
+                onclick="return confirm('Send this reply to @{{ c.author_username or 'this user' }} on Instagram now?')">Send reply</button>
+        <button type="submit" class="btn" formaction="/engagement/{{ c.id }}/draft">Draft with AI</button>
+        <button type="submit" class="btn btn-danger" formaction="/engagement/{{ c.id }}/ignore" formnovalidate>Ignore</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if total > comments|length %}<p class="small">Showing the newest {{ comments|length }} of {{ total }}.</p>{% endif %}
+</div>
+{% endblock %}

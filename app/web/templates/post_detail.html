@@ -158,6 +158,7 @@
         <p>Sent to your TikTok drafts. Open TikTok, add the AI label and press Publish, then click <strong>Mark as posted</strong> below.</p>
         {% elif post.status == 'published' %}
         <p>Published{% if post.published_via %} ({{ post.published_via }}){% endif %}{% if post.external_url %} — <a href="{{ post.external_url }}" target="_blank" rel="noopener">open post</a>{% endif %}.</p>
+        {% if metrics %}<p class="small">Instagram: {{ metrics.likes if metrics.likes is not none else '–' }} likes · {{ metrics.comments if metrics.comments is not none else '–' }} comments (checked {{ metrics.fetched_at.strftime('%Y-%m-%d %H:%M') }} UTC)</p>{% endif %}
         {% elif post.status == 'publishing' %}
         <p>Publishing in progress&hellip; refresh in a minute.</p>
         {% elif post.status == 'failed' %}

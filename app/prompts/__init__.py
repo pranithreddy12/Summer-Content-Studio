@@ -71,3 +71,29 @@ def render_user(
         extra_instructions=extra_instructions,
         image_count=image_count,
     )
+
+
+REPLY_PROMPT_VERSION = "reply_v1"
+
+
+def render_reply_system(profile: ModelProfile) -> str:
+    """System prompt for drafting a reply to a comment (persona + restricted topics reused)."""
+    return _prompt_env.get_template("reply_v1.j2").render(profile=profile)
+
+
+def render_reply_user(post_caption: str, author: str, comment: str, extra_instructions: str = "") -> str:
+    """User prompt: the stranger's comment goes inside a tag as data, angle brackets neutralised."""
+    import re
+
+    def clean(text: str, limit: int) -> str:
+        return re.sub(r"[<>]", " ", text or "")[:limit].strip()
+
+    name = re.sub(r"[^A-Za-z0-9_.-]", "", author or "")[:30] or "unknown"
+    lines = [
+        f"<post_caption>{clean(post_caption, 400)}</post_caption>",
+        f'<comment author="{name}">{clean(comment, 500)}</comment>',
+    ]
+    if extra_instructions:
+        lines.append(f"<extra_instructions>{clean(extra_instructions, 300)}</extra_instructions>")
+    lines.append("Write one reply.")
+    return "\n".join(lines)

@@ -1056,7 +1056,7 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; min-height: 0; align-content: start; }
+  .shell { grid-template-columns: minmax(0, 1fr); min-height: 0; align-content: start; }  /* 1fr alone lets a wide table stretch the whole page */
   .sidebar {
     position: static;
     height: auto;

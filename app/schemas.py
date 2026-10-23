@@ -352,6 +352,43 @@ class PublishRequest(BaseSchema):
     override_window: bool = False
 
 
+class CommentOut(BaseSchema):
+    id: int
+    post_id: int
+    platform: str
+    external_id: str
+    author_username: Optional[str] = None
+    text: str
+    commented_at: Optional[datetime] = None
+    reply_status: str
+    reply_text: str = ""
+    reply_external_id: Optional[str] = None
+
+
+class DraftReplyOut(BaseSchema):
+    comment: CommentOut
+    suggest_ignore: bool = False
+
+
+class DraftReplyRequest(BaseSchema):
+    instructions: str = Field("", max_length=300)
+
+
+class SendReplyRequest(BaseSchema):
+    text: str = Field(..., min_length=1, max_length=1000)
+
+
+class MetricOut(BaseSchema):
+    id: int
+    post_id: int
+    fetched_at: datetime
+    likes: Optional[int] = None
+    comments: Optional[int] = None
+    shares: Optional[int] = None
+    views: Optional[int] = None
+    saves: Optional[int] = None
+
+
 class MarkPostedRequest(BaseSchema):
     """Body for POST /posts/{id}/mark-posted - external URL is optional."""
 
