@@ -60,8 +60,14 @@ def sync_media() -> None:
         click.echo("MEDIA_SYNC_DIR not configured", err=True)
         sys.exit(1)
 
+    from app.services import AppError
+
     with session_scope() as db:
-        result = sync_media_dir(db)
+        try:
+            result = sync_media_dir(db)
+        except AppError as e:  # e.g. disk_low: nothing was registered
+            click.echo(e.message, err=True)
+            sys.exit(1)
         click.echo(f"Sync complete: {result['added']} added, {result['skipped']} skipped")
 
 

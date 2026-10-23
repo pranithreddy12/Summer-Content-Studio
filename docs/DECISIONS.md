@@ -147,3 +147,10 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - **Only API-published Instagram posts are tracked** for metrics/comments; TikTok has no comment/metric access for this app type (UI says so).
 - **Digest is hourly by key** (`comments:instagram:YYYYMMDDHH`): simple and restart-safe, at the cost of delaying later comments in the same hour.
 - **Layout fix found during the 375 px check**: `.shell { grid-template-columns: 1fr }` let any wide table stretch the whole page (overview was 641 px wide on a 375 px phone). Now `minmax(0, 1fr)`.
+
+## Phase 2 B8 decisions (2026-10-23)
+- **Production means authenticated**: `APP_ENV=production` refuses to start without `DASHBOARD_USERNAME` and a 12+ character `DASHBOARD_PASSWORD`, and serves no `/docs`, `/redoc` or `/openapi.json`. The only unauthenticated routes are `/health` and the signed `/m/{token}` media links.
+- **Disk guard returns 507** (`disk_low`) and sends one push per day; nothing is registered or hashed while the disk is below `MIN_FREE_DISK_GB` (default 2 GB). Tests set the threshold to 0 so they never depend on the machine's free space.
+- **Docs are written for a non-technical client**, state what is unconfirmed, and mark every menu path as "may have moved"; TikTok setup steps are explicitly unconfirmed (the official pages were unreachable).
+- **Version 0.2.0** (`/health`, OpenAPI title).
+- **Footer/sidebar text follows the mode** instead of claiming "Phase 1 / nothing is published automatically".

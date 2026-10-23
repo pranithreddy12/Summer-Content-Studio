@@ -235,6 +235,24 @@ async def upload_asset(
 # Local sync (from MEDIA_SYNC_DIR)
 # =========================================================================
 
+def ensure_free_disk(db: Session, root, min_free_gb: float) -> None:
+    """Refuse to register (and so hash/pull) media when the disk is nearly full (PLAN §11a): the rclone
+    copy that feeds MEDIA_SYNC_DIR fills this disk, and a full disk also breaks SQLite. Sends one push per day."""
+    import shutil
+
+    from app.services import AppError
+
+    free_gb = shutil.disk_usage(root).free / 1e9
+    if free_gb >= min_free_gb:
+        return
+    from app.db import utcnow
+    from app.services.notifications import notify
+
+    notify(db, "disk_low", f"disk:{utcnow().date().isoformat()}", "Server disk is almost full",
+           f"{free_gb:.1f} GB free (minimum {min_free_gb:g} GB). Media sync is paused until space is freed.", url="/assets")
+    raise AppError("disk_low", f"Only {free_gb:.1f} GB free (minimum {min_free_gb:g} GB); media sync refused.", status=507)
+
+
 def sync_media_dir(db: Session) -> dict:
     """Sync files from MEDIA_SYNC_DIR - register new files, skip existing."""
     settings = get_settings()
@@ -245,6 +263,7 @@ def sync_media_dir(db: Session) -> dict:
     root = settings.MEDIA_SYNC_DIR
     if not root.exists():
         raise HTTPException(status_code=400, detail=f"Sync directory does not exist: {root}")
+    ensure_free_disk(db, root, settings.MIN_FREE_DISK_GB)
 
     added = 0
     skipped = 0

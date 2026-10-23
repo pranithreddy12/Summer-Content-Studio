@@ -15,7 +15,7 @@ from app.services.media_urls import verify_media_token
 router = APIRouter(tags=["media"])
 
 
-@router.api_route("/m/{token}", methods=["GET", "HEAD"])
+@router.api_route("/m/{token}", methods=["GET", "HEAD"], include_in_schema=False)
 def public_media(token: str, db: Session = Depends(get_db)):
     asset_id = verify_media_token(token, utcnow())
     asset = db.get(MediaAsset, asset_id) if asset_id is not None else None

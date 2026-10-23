@@ -52,15 +52,20 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
 
+    problems = settings.production_problems() if settings.APP_ENV == "production" else []
+    if problems:  # PLAN_PHASE2 §15: Phase 2 makes the app public-facing; never start it open
+        raise RuntimeError("Refusing to start with APP_ENV=production: " + "; ".join(problems) + ".")
+
     # Configure docs URLs based on environment
     docs_url = "/docs" if settings.APP_ENV == "development" else None
     redoc_url = "/redoc" if settings.APP_ENV == "development" else None
 
     app = FastAPI(
         title="Summer AI Content Automation",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
         docs_url=docs_url,
+        openapi_url="/openapi.json" if settings.APP_ENV == "development" else None,
         redoc_url=redoc_url,
     )
 
@@ -237,7 +242,7 @@ def create_app() -> FastAPI:
             "publishing_mode": settings.PUBLISHING_MODE,
             "worker_last_seen": worker_last_seen,
             "worker_ok": worker_ok,
-            "version": "0.1.0",
+            "version": "0.2.0",
         }
 
     from app.api import profiles, assets, content, posts, tags, planner, notifications

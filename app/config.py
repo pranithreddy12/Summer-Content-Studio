@@ -83,25 +83,29 @@ class Settings(BaseSettings):
     MIN_FREE_DISK_GB: float = 2.0
 
     @field_validator("PUBLISHING_MODE")
-    @classmethod    def validate_publishing_mode(cls, v: str) -> str:
+    @classmethod
+    def validate_publishing_mode(cls, v: str) -> str:
         if v not in ("off", "reminders", "dry_run", "live"):
             raise ValueError("PUBLISHING_MODE must be 'off', 'reminders', 'dry_run' or 'live'")
         return v
 
     @field_validator("TIKTOK_POST_MODE")
-    @classmethod    def validate_tiktok_post_mode(cls, v: str) -> str:
+    @classmethod
+    def validate_tiktok_post_mode(cls, v: str) -> str:
         if v not in ("inbox", "direct"):
             raise ValueError("TIKTOK_POST_MODE must be 'inbox' or 'direct'")
         return v
 
     @field_validator("NOTIFY_PROVIDER")
-    @classmethod    def validate_notify_provider(cls, v: str) -> str:
+    @classmethod
+    def validate_notify_provider(cls, v: str) -> str:
         if v not in ("none", "telegram", "ntfy", "pushover"):
             raise ValueError("NOTIFY_PROVIDER must be 'none', 'telegram', 'ntfy' or 'pushover'")
         return v
 
     @field_validator("PUBLIC_BASE_URL")
-    @classmethod    def validate_public_base_url(cls, v: Optional[str]) -> Optional[str]:
+    @classmethod
+    def validate_public_base_url(cls, v: Optional[str]) -> Optional[str]:
         if v in (None, ""):
             return None
         v = str(v).rstrip("/")
@@ -110,7 +114,8 @@ class Settings(BaseSettings):
         return v
 
     @field_validator("PLANNER_RUN_HOUR", "PLANNER_LEAD_MINUTES")
-    @classmethod    def validate_non_negative_int(cls, v: int) -> int:
+    @classmethod
+    def validate_non_negative_int(cls, v: int) -> int:
         if v < 0:
             raise ValueError("must be >= 0")
         return v
@@ -188,6 +193,15 @@ class Settings(BaseSettings):
     @property
     def mistral_configured(self) -> bool:
         return self.MISTRAL_API_KEY is not None and self.MISTRAL_API_KEY.get_secret_value() != ""
+
+    def production_problems(self) -> list[str]:
+        """Reasons this configuration must not run with APP_ENV=production (the app is then public-facing)."""
+        problems = []
+        if not self.basic_auth_enabled:
+            problems.append("DASHBOARD_USERNAME and DASHBOARD_PASSWORD must both be set (Basic auth is mandatory)")
+        elif len(self.DASHBOARD_PASSWORD.get_secret_value()) < 12:
+            problems.append("DASHBOARD_PASSWORD must be at least 12 characters")
+        return problems
 
     @property
     def basic_auth_enabled(self) -> bool:

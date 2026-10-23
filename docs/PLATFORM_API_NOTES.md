@@ -21,7 +21,7 @@ Docs: https://developers.facebook.com/docs/instagram-platform/content-publishing
 | Short-lived token | `POST https://api.instagram.com/oauth/access_token` form: `client_id, client_secret, grant_type=authorization_code, redirect_uri, code` → `access_token, user_id, permissions` (doc shows a `data` array; module accepts flat or `data[0]`) | VERIFIED-DOC (shape variants handled) |
 | Long-lived token | `GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret&access_token` → `access_token, token_type, expires_in` (60 days, server-side only) | VERIFIED-DOC |
 | Refresh | `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token` — token must be ≥ 24 h old and unexpired; +60 days each time; an expired token cannot be refreshed | VERIFIED-DOC |
-| Username lookup | `GET /me?fields=user_id,username` | **UNVERIFIED** (falls back to the `user_id` from the token response and username `unknown`) |
+| Username lookup | `GET /me?fields=user_id,username` (the get-started page uses exactly this call; its `account_type` field returns `Business` or `Media_Creator`, so Creator accounts are recognised by this API) | VERIFIED-DOC 2026-10-23 (falls back to the token response's `user_id` and username `unknown` if it ever fails) |
 | Create container | `POST /<IG_ID>/media` — image: `image_url`; reel: `media_type=REELS` + `video_url`; story: `media_type=STORIES` + `image_url` or `video_url`; `caption` (not for stories); `access_token` | VERIFIED-DOC (guide text; Reels/Stories wording partly stale per search — **confirm live, L2**) |
 | Media rules | URL must be publicly reachable when Meta fetches it; **images must be JPEG** (MPO/JPS unsupported) | VERIFIED-DOC |
 | Poll | `GET /<CONTAINER_ID>?fields=status_code` → `EXPIRED, ERROR, FINISHED, IN_PROGRESS, PUBLISHED`. Docs: poll **once per minute, at most 5 minutes**. | VERIFIED-DOC |
@@ -86,5 +86,8 @@ Design consequences:
 | missing capability | `unsupported` | no |
 
 ## Live checklist (UNVERIFIED items to prove in L2/L3)
-Instagram: Creator account eligibility and Facebook Page need · Reels and Stories containers · `/me` fields · permalink fetch · `content_publishing_limit` field names · comment `username` field · `like_count`/`comments_count`.
+Instagram: Creator account eligibility **for publishing** (the account type is recognised, publishing itself unproven) and Facebook Page need · Reels and Stories containers · permalink fetch · `content_publishing_limit` field names · comment `username` field · `like_count`/`comments_count`.
 TikTok: v2 authorize scope separator/PKCE · token + refresh request/response · `/user/info/` · init `error.code` shape · upload response codes · direct-post init path and `is_aigc`.
+
+## Dropbox / rclone (docs/DEPLOY.md, PLATFORM_SETUP.md) - checked 2026-10-23
+rclone's Dropbox page: `rclone config` -> `dropbox`; empty key/secret = rclone's shared app; own app needs redirect `http://localhost:53682/`; its own-app scope list names file **write** as the minimum - a read-only scope set for download-only `rclone copy` is **UNVERIFIED** (try read-only first, widen only if rclone refuses). The page does not document `--min-size` or `copy` semantics (general rclone knowledge: `copy` never deletes at the destination) - both **UNVERIFIED** here, proven in L5.

@@ -42,6 +42,7 @@ def settings(tmp_path_factory) -> Generator:
     # Phase 2: tests never post or push for real, whatever the developer's .env says
     os.environ["PUBLISHING_MODE"] = "off"
     os.environ["NOTIFY_PROVIDER"] = "none"
+    os.environ["MIN_FREE_DISK_GB"] = "0"   # tests must not depend on the free space of the machine running them
     for secret in ISOLATED_KEYS:
         os.environ[secret] = ""
 
@@ -55,7 +56,7 @@ def settings(tmp_path_factory) -> Generator:
 
     clear_settings_cache()
     for key in ["DATABASE_URL", "MEDIA_UPLOAD_DIR", "MEDIA_SYNC_DIR", "ANTHROPIC_API_KEY", "MISTRAL_API_KEY", "LLM_PROVIDER",
-                "PUBLISHING_MODE", "NOTIFY_PROVIDER", *ISOLATED_KEYS]:
+                "PUBLISHING_MODE", "NOTIFY_PROVIDER", "MIN_FREE_DISK_GB", *ISOLATED_KEYS]:
         os.environ.pop(key, None)
 
 

@@ -9,7 +9,7 @@ def test_app_starts(client):
     assert data["status"] == "ok"
     assert data["database"] == "ok"
     assert data["claude_configured"] is True
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "0.2.0"
 
 
 def test_health_endpoint_open(client):

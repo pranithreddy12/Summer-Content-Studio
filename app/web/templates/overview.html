@@ -11,7 +11,7 @@
     <div class="page-actions">
       <a href="/generate" class="btn btn-primary">Generate draft</a>
       <a href="/posts" class="btn">Open queue</a>
-      <span class="mode-badge">{% if settings.PUBLISHING_MODE == 'off' %}Phase 1{% elif settings.PUBLISHING_MODE == 'reminders' %}Reminders{% elif settings.PUBLISHING_MODE == 'dry_run' %}Dry run{% else %}Live{% endif %} mode</span>
+      <span class="mode-badge">{% if settings.PUBLISHING_MODE == 'off' %}Manual{% elif settings.PUBLISHING_MODE == 'reminders' %}Reminders{% elif settings.PUBLISHING_MODE == 'dry_run' %}Dry run{% else %}Live{% endif %} mode</span>
     </div>
   </header>
 
