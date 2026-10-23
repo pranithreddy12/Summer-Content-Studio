@@ -168,3 +168,14 @@ Validation of B1–B3 found: B3 working-tree broke overview/post-detail (`settin
 **Proof run (real CLI, scratch DB, `httpx.Client.send` patched to abort):** `PUBLISHING_MODE=dry_run python -m app.cli worker --once` on 3 due reels -> `dry_runs: 3`, 3 attempts (`trigger=dry_run`, `success=NULL`, "would publish reel to instagram (26 chars, media 'c0.mp4')"), posts stay `scheduled` with `publish_attempt_count=0`, zero HTTP; a second loop adds no rows.
 **Not verified:** nothing has touched a real platform or a real browser session (OAuth callback is proven against MockTransport only); the accounts page and publish panel were not viewed at 375 px; `PUBLISHING_MODE=live` worker loop has not run for real.
 **Next:** B6 - full worker (stuck-claim recovery, token refresh, planner tick, `worker_ok`), B7 engagement, B8 docs/hardening.
+
+
+## Phase 2 — B6 Worker complete (2026-10-23)
+**Files changed:** `app/services/scheduler.py` (rewritten: isolated stages, `recover_stuck`, `refresh_due_tokens`, `planner_tick`, `reminders`, `publish_due`, `run_forever`), `app/services/publishing.py` (`_apply_success` extracted, `recover_stuck_claim`, `fail_preflight`, `PERSISTENT_PREFLIGHT`, `STUCK_AFTER`), `app/services/posts.py` (`preflight_fail` transitions), `app/cli.py` (worker uses `run_forever` + signal handlers + one shared httpx client), `tests/test_scheduler.py` (36), `tests/manual/kill_restart.py`, `tests/manual/dryrun_proof.py`, PLAN_PHASE2.md v3.3.
+**Test results:** full suite **428 passed** (B5 baseline 394).
+**Proof run — kill and restart (real worker processes, fake Instagram server, `Popen.kill()` mid-publish; `tests/manual/kill_restart.py`):**
+- A (platform had published before the crash): restart → recovery asks the platform, finds the container `PUBLISHED` → post `published`, **0 new container, 0 media_publish calls** (one attempt row, success).
+- B (platform had NOT published): restart → recovery re-queues (attempt 1 `timeout: interrupted`, ref `C1` kept) → retry creates container 2 → exactly **1** media_publish → post `published`. No post lost, none published twice.
+**Defect found while building:** a live post with no connected account (or other persistent pre-flight problem) was skipped silently every minute forever — now fails visibly with a push and can be retried.
+**Not verified:** a real platform, SIGTERM on Linux (Windows tested only: `Popen.kill`/`terminate`; the signal handler path is unit-covered via the stop event, not by delivering a signal), accounts/publish pages at 375 px.
+**Next:** B7 - Instagram engagement (metrics, comments, reply drafts), B8 - docs/hardening/handover.

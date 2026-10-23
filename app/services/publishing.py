@@ -269,7 +269,14 @@ def _publish_live(db: Session, post: ContentPost, trigger: str, now: datetime, h
                                PlatformError("internal_error", "Unexpected error while publishing.", True),
                                now, secrets_)
 
-    inbox = post.platform == "tiktok" and settings.TIKTOK_POST_MODE == "inbox"
+    return _apply_success(db, post, attempt, result, now)
+
+
+def _apply_success(db: Session, post: ContentPost, attempt: PublishAttempt, result, now: datetime) -> ContentPost:
+    """Record a successful publish (also used when stuck-claim recovery finds the post is live)."""
+    from app.services.posts import apply_transition
+
+    inbox = post.platform == "tiktok" and get_settings().TIKTOK_POST_MODE == "inbox"
     apply_transition(db, post, "inbox_success" if inbox else "publish_success")
     post.external_post_id = result.external_post_id
     post.external_url = result.external_url
@@ -286,6 +293,66 @@ def _publish_live(db: Session, post: ContentPost, trigger: str, now: datetime, h
         notify(db, "tiktok_ready", f"tiktok:{post.id}", "Video is in your TikTok drafts",
                "Open TikTok, add the AI label and press Publish.", url=f"/posts/{post.id}")
     return post
+
+
+STUCK_AFTER = timedelta(minutes=15)
+
+# Pre-flight problems that will not fix themselves: the worker fails the post (visible + push)
+# instead of skipping it silently every minute. (Window / status problems are NOT in this set.)
+PERSISTENT_PREFLIGHT = {"account_not_connected", "media_required", "media_not_publishable", "caption_too_long"}
+
+
+def fail_preflight(db: Session, post_id: int, e: AppError, now: datetime) -> ContentPost:
+    """Worker-side: a scheduled post that can never publish as-is -> failed, with an attempt row and a push.
+    The user fixes the cause (reconnect, new media...) and clicks Retry."""
+    from app.services.notifications import notify
+    from app.services.posts import apply_transition, get_post
+
+    post = get_post(db, post_id)
+    apply_transition(db, post, "preflight_fail")
+    post.publish_attempt_count += 1
+    post.next_attempt_at = None
+    post.last_publish_error = f"{e.code}: {e.message}"[:500]
+    attempt = PublishAttempt(post_id=post.id, attempt_no=len(list_attempts(db, post.id)) + 1, trigger="schedule",
+                             started_at=now, finished_at=now, success=False, error_code=e.code,
+                             error_message=e.message[:500])
+    db.add(attempt)
+    db.commit()
+    notify(db, "publish_failed", f"failed:{post.id}:{attempt.attempt_no}",
+           f"Post failed on {post.platform}", post.last_publish_error, url=f"/posts/{post.id}")
+    return post
+
+
+def recover_stuck_claim(db: Session, post: ContentPost, now: datetime, http) -> str:
+    """A post left in `publishing` (worker crashed mid-publish). NEVER blindly re-publish:
+    if the attempt saved a platform reference, ask the platform whether it went out first.
+    Returns 'published' | 'retry' | 'failed'."""
+    from app.services import accounts
+
+    attempts = [a for a in list_attempts(db, post.id) if a.trigger != "dry_run"]
+    attempt = attempts[-1] if attempts else None
+    if attempt is None:  # claimed without an attempt row cannot happen (same commit); heal it anyway
+        attempt = PublishAttempt(post_id=post.id, attempt_no=1, trigger="retry", started_at=post.claimed_at or now)
+        db.add(attempt)
+        db.commit()
+    account = connected_account(db, post.model_profile_id, post.platform)
+    try:
+        if attempt.platform_ref and account is not None:
+            token = accounts.get_valid_token(db, account, http, now)
+            found = publisher(post.platform).check_status(http, token, account.external_user_id, attempt.platform_ref)
+            if found is not None:
+                _apply_success(db, post, attempt, found, now)
+                return "published"
+        err = PlatformError("timeout", "Publishing was interrupted; retrying.", True, platform_ref=attempt.platform_ref)
+    except PlatformError as e:
+        err = e
+    except AppError as e:
+        err = PlatformError("account_not_connected", e.message, False)
+    except Exception:
+        logger.exception("stuck-claim check crashed", extra={"event": "recover_crash", "post_id": post.id})
+        err = PlatformError("internal_error", "Could not verify the interrupted publish.", True)
+    _record_failure(db, post, attempt, account, err, now, [])
+    return "retry" if post.status == "scheduled" else "failed"
 
 
 def _record_failure(db: Session, post: ContentPost, attempt: PublishAttempt, account, e: PlatformError,

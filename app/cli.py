@@ -109,11 +109,7 @@ def plan_week(profile_id: int, platform: str, seed) -> None:
 @click.option("--once", "once", is_flag=True, help="Run one iteration and exit (for tests).")
 def worker(once) -> None:
     """The one background process: poll the DB, publish/remind per PUBLISHING_MODE."""
-    import time
-
-    from app.db import get_session_factory, utcnow
     from app.logging_setup import configure_logging
-    from app.services.scheduler import run_once
 
     configure_logging()
     settings = get_settings()
@@ -134,22 +130,29 @@ def worker(once) -> None:
         )
         sys.exit(1)
 
+    import signal
+    import threading
+
+    from app.platforms import http_client
+    from app.services.scheduler import run_forever
+
+    stop = threading.Event()
+
+    def request_stop(signum, frame):  # finish the current iteration, then exit cleanly
+        click.echo("Stop requested - finishing the current iteration...")
+        stop.set()
+
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):  # SIGBREAK = Ctrl+Break on Windows
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), request_stop)
+
     click.echo(f"Worker started: interval={interval}s mode={settings.PUBLISHING_MODE}")
+    http = http_client(settings)  # one shared client for the whole run
     try:
-        while True:
-            db = get_session_factory()()
-            try:
-                result = run_once(db, utcnow())
-                click.echo(f"worker: {result}")
-            except Exception as e:  # one bad iteration never kills the worker
-                click.echo(f"worker iteration failed: {e}", err=True)
-            finally:
-                db.close()
-            if once:
-                break
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        click.echo("Worker stopped cleanly.")
+        run_forever(stop, interval, http=http, once=once, echo=click.echo)
+    finally:
+        http.close()
+    click.echo("Worker stopped cleanly.")
 
 
 @cli.command()

@@ -412,8 +412,9 @@ def test_scheduler_one_bad_post_does_not_stop_the_rest(live, monkeypatch):
     no_account = make_post(live, "tiktok", "video", planned=NOON - timedelta(minutes=5))   # no tiktok account
     good = make_post(live, planned=NOON)
     r = run(NOON)
-    assert (r["due"], r["skipped"], r["published"]) == (2, 1, 1)
-    assert post_of(no_account).status == "scheduled" and post_of(good).status == "published"
+    assert (r["due"], r["failed"], r["published"]) == (2, 1, 1)
+    # the unpublishable post is failed visibly (not skipped forever) while the good one still went out
+    assert post_of(no_account).status == "failed" and post_of(good).status == "published"
 
 
 def test_scheduler_failures_are_counted_and_recorded(live, monkeypatch):

@@ -40,6 +40,8 @@ TRANSITIONS = {
     ("mark_posted", "sent_to_drafts"): "published",
     ("publish_retry", "publishing"): "scheduled",          # next_attempt_at set
     ("publish_fail", "publishing"): "failed",
+    ("preflight_fail", "approved"): "failed",              # worker found a persistent pre-flight problem
+    ("preflight_fail", "scheduled"): "failed",
     ("retry", "failed"): "scheduled",                      # resets attempt count
     ("edit", "failed"): "draft",
     ("plan", "approved"): "scheduled",                     # planner sets planned_by='planner'

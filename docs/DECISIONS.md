@@ -133,3 +133,10 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - **`/m/{token}`**: HMAC + 1 h expiry, GET/HEAD only, the sole route without Basic auth (besides /health).
 - **Dry run never claims** and writes one idempotent attempt per (post, planned time); **retry** only re-schedules, the worker publishes inside the window.
 - **Failure visibility over silent skipping**: a missing media file or expired token fails the post and pushes `publish_failed`.
+
+## Phase 2 B6 decisions (2026-10-23)
+- **Recovery never publishes.** A post stuck in `publishing` is checked against the platform using the `platform_ref` saved by `on_ref` (container id / publish_id); only an absent or unknown ref sends it back through the normal backoff. Known gap: a TikTok upload that is still processing when the check runs can later also appear in drafts after the retry (drafts only, never public).
+- **Persistent pre-flight problems fail the post** (live mode only) rather than skipping it forever; dry-run and reminders never change state.
+- **Planner tick state** (last local day per rule) is stored in the single heartbeat row's JSON instead of a new table; `_heartbeat` carries it forward. Planner ticks do not run in `off` mode.
+- **Throttles are in memory** (token refresh retry every 30 min): the worker is a single process; a restart simply tries once more.
+- **Shutdown**: SIGINT/SIGTERM/SIGBREAK set an event; the running iteration finishes, the sleep is interruptible.
