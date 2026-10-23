@@ -4,4 +4,4 @@
 *.service       text eol=lf
 *.timer         text eol=lf
 Caddyfile       text eol=lf
-deploy/*        text eol=lf
+deploy/**       text eol=lf

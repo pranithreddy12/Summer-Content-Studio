@@ -159,3 +159,8 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - `deploy/` (server setup, Caddy, systemd, backup) and `docs/DEPLOY.md` are the single deployment reference (`/srv/summer` layout). They were authored outside this build log; reviewed and kept.
 - The server installs from `requirements.lock` (exact tested versions) and the lock must stay portable: no `name @ file:///...` entries (checked by `tests/manual/build_delivery_zip.py`).
 - Server-side scripts and units are kept LF by `.gitattributes`.
+
+## Public pages (2026-10-24)
+- Privacy Policy, Terms and the landing page are **static files on the apex domain, served by Caddy** from `/var/www/summer-site`, deliberately outside the app: no login, no cookies, no scripts, strict CSP. The app keeps no `/privacy` or `/terms` routes (tested) so nothing there can be exposed by mistake.
+- Texts are **drafts with explicit `[[PLACEHOLDERS]]`** that a test pins to the documented list; a visible placeholder is safer than invented legal details. Whoever operates the service decides the legal name, contact address, deletion promise and governing law.
+- Policy statements are tied to the code where possible (named processors, the 14-day backup rotation) so a change in one without the other fails a test.

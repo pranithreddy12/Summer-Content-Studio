@@ -76,6 +76,7 @@ MIN_FREE_DISK_GB=2
 sudo -u summer bash -c 'cd /srv/summer/app && /srv/summer/venv/bin/python -m app.cli init-db'
 sudo cp /srv/summer/app/deploy/summer-web.service /srv/summer/app/deploy/summer-worker.service /etc/systemd/system/
 sudo cp /srv/summer/app/deploy/Caddyfile /etc/caddy/Caddyfile
+sudo mkdir -p /var/www/summer-site && sudo cp /srv/summer/app/deploy/site/*.html /var/www/summer-site/ && sudo chmod -R a+rX /var/www/summer-site   # public pages, section 12
 sudo systemctl daemon-reload && sudo systemctl enable --now summer-web && sudo systemctl reload caddy
 ```
 Verify: `curl https://studio.itsmesummer.app/health` → `"status":"ok"` (certificate issued automatically); open it on a **phone**, log in, generate a draft, upload a file.
@@ -134,8 +135,40 @@ Change one thing at a time; restart `summer-web summer-worker` after each `.env`
 Update: repeat the `tar`/`scp` copy (step 5), `sudo -u summer /srv/summer/venv/bin/pip install -r /srv/summer/app/requirements.lock`, `sudo -u summer bash -c 'cd /srv/summer/app && /srv/summer/venv/bin/python -m app.cli init-db'` (runs migrations), then `sudo systemctl restart summer-web summer-worker`.
 Roll back: restore the previous archive, and the latest `data/app.db` backup if a migration went wrong.
 
-## 12. Still needed for the public developer-app pages
-TikTok and Meta developer apps typically ask for **Privacy Policy** and **Terms** URLs on your domain — add simple `/privacy` and `/terms` pages (apex domain) before submitting those apps; check the exact fields in each portal.
+## 12. Public pages: Privacy Policy and Terms (apex domain)
+Meta and TikTok developer apps ask for a **Privacy Policy URL** and a **Terms of Service URL** (Meta also asks how people can get their data deleted).
+The app's own login would block them, so they are **plain static files served by Caddy on the apex domain**, outside the app:
+
+| URL | File | Use it for |
+|---|---|---|
+| `https://itsmesummer.app/privacy` | `deploy/site/privacy.html` | Meta "Privacy Policy URL"; TikTok privacy policy URL |
+| `https://itsmesummer.app/privacy#data-deletion` | section 9 of the same page | Meta "User data deletion" instructions URL |
+| `https://itsmesummer.app/terms` | `deploy/site/terms.html` | Meta / TikTok "Terms of Service URL" |
+| `https://itsmesummer.app/` | `deploy/site/index.html` | landing page that links to both |
+
+The `itsmesummer.app { … }` block in `deploy/Caddyfile` serves `/var/www/summer-site` (copied in step 5; the `caddy` user cannot read `/srv/summer`),
+with no login, no cookies, no scripts and a strict Content-Security-Policy. The pages are not indexed (`noindex`). The studio itself stays at `studio.itsmesummer.app` behind its login.
+
+**The texts are drafts and contain placeholders. Fill them in before submitting either developer app:**
+
+| Placeholder | Put |
+|---|---|
+| `[[OPERATOR NAME]]` | the legal name of whoever operates the service (Lee, or his company) |
+| `[[CONTACT EMAIL]]` | a mailbox that is read — people are told to write there to delete data |
+| `[[DATE]]` | the date of publication |
+| `[[DELETION DAYS]]` | how fast deletion requests are honoured (e.g. `30`) — a promise, so only what can really be kept |
+| `[[GOVERNING LAW]]` | country/state whose law applies (Lee decides, ideally with legal advice) |
+
+```bash
+# edit the copies in the repo (so they are versioned), then publish and check nothing is left:
+sudo cp /srv/summer/app/deploy/site/*.html /var/www/summer-site/
+grep -n '\[\[' /var/www/summer-site/*.html          # must print nothing
+curl -s https://itsmesummer.app/privacy | grep -c 'Privacy Policy'    # 1 or more
+curl -sI https://itsmesummer.app/terms | head -1                       # HTTP/2 200
+```
+Changing the text later = edit `deploy/site/*.html`, copy again; no restart needed.
+The text describes what the app really does (data handled, AI providers, hosting, deletion by e-mail). **It is plain-language draft text, not legal advice** — Lee should read it and
+have it checked, and it must be updated whenever a data flow changes (a new provider, a new data type). Each portal's exact field names move around; use the table above to fill them.
 
 ## 13. Troubleshooting
 | Symptom | Look at |
@@ -148,6 +181,7 @@ TikTok and Meta developer apps typically ask for **Privacy Policy** and **Terms*
 | A post shows **failed** | open the post: the error code and attempts table say why; fix the cause, then **Retry** |
 | Instagram says the media is not publishable | images must be JPEG (Reels/videos are fine) |
 | An account shows **expired** | **Accounts → Reconnect** (tokens normally renew by themselves) |
+| `/privacy` or `/terms` shows 404, or the page still contains `[[…]]` | copy `deploy/site/*.html` to `/var/www/summer-site` (step 5), fill the placeholders (section 12); the apex DNS record must point at the droplet |
 | Nothing arrives from Dropbox | `journalctl -u summer-media-sync -n 50`; the folder must be in Lee's own Dropbox (step 6); a nearly full disk pauses the sync and sends a `disk_low` push |
 | Pushes do not arrive | **Accounts → Send test notification** or `python -m app.cli notify-test`; check the provider credentials in `.env` and restart the services |
 | Restore a database backup | `sudo systemctl stop summer-web summer-worker`, copy `/srv/summer/backups/app-<date>.db` over `/srv/summer/app/data/app.db` (owner `summer`), start both |

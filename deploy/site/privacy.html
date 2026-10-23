@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- DRAFT for the operator to review. Replace every placeholder written in double square brackets (see docs/DEPLOY.md, "Public pages") before the Meta / TikTok apps are submitted.
+     This is plain-language draft text, not legal advice: have it checked before relying on it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Privacy Policy – Summer Content Studio</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2433; --muted:#5b6578; --line:#e3e7ee; --card:#f6f8fb; --accent:#3b5bdb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171f; --fg:#e8ebf2; --muted:#9aa4b8; --line:#2a3040; --card:#1c2130; --accent:#8aa4ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; } h2 { font-size: 1.25rem; margin: 36px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  a { color: var(--accent); }
+  table { width:100%; border-collapse: collapse; margin: 12px 0; font-size:.95rem; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-size:.85rem; text-transform:uppercase; letter-spacing:.03em; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin:16px 0; }
+  nav { margin-bottom: 24px; font-size: .95rem; }
+</style>
+</head>
+<body>
+<main>
+<nav><a href="/">Home</a> · <a href="/terms">Terms of Service</a></nav>
+
+<h1>Privacy Policy</h1>
+<p class="sub">Summer Content Studio · itsmesummer.app · Last updated: [[DATE]]</p>
+
+<h2>1. Who we are</h2>
+<p>Summer Content Studio is a private tool operated by <b>[[OPERATOR NAME]]</b> ("we", "us"). It helps one content creator plan, write, schedule and publish her own
+social media posts. It is not a public service: there are no visitor accounts and no sign-up.
+Contact for anything in this policy: <b>[[CONTACT EMAIL]]</b>.</p>
+
+<h2>2. What the service does with your data</h2>
+<p>The creator connects her own Instagram and TikTok accounts by pressing "Allow" on Instagram's or TikTok's own login page. We never see or store a
+password for those platforms. The service then drafts captions with AI, schedules posts, uploads approved posts (Instagram) or finished videos (TikTok drafts),
+shows how a post is doing, and lists comments on her posts so she can reply to them herself.</p>
+
+<h2>3. What data we handle</h2>
+<table>
+<tr><th>Data</th><th>Why</th></tr>
+<tr><td>Instagram / TikTok account name and ID, and an access token the platform gives us (stored encrypted)</td><td>to publish for the connected account and keep the connection working</td></tr>
+<tr><td>The creator's content: captions, hashtags, photos and videos, descriptions she writes, planned posting times</td><td>to write, schedule and publish her posts</td></tr>
+<tr><td>Comments on her Instagram posts that are made available through Instagram's interface: the commenter's public username, the comment text and time</td><td>so she can read and answer them</td></tr>
+<tr><td>Post statistics from Instagram (for example like and comment counts)</td><td>to show how posts are doing</td></tr>
+<tr><td>Technical logs: time, requested page, result, error codes (access tokens are removed from logs)</td><td>to keep the service running and to find faults</td></tr>
+<tr><td>Delivery records of push notifications (event type and time, not the message text)</td><td>to avoid sending the same alert twice</td></tr>
+</table>
+<p>We do not collect data from visitors to these public pages beyond ordinary server logs. We do not sell data, run advertising, or build profiles of commenters.</p>
+
+<h2>4. AI processing</h2>
+<p>To write drafts and suggested replies, text (the creator's brief, captions, and for reply drafts the text of a comment) and, if enabled, a few still images taken from her own
+photos and videos are sent to an AI provider: <b>Anthropic</b> and/or <b>Mistral AI</b>. They process it to produce the text and are not told to keep it for any other purpose of ours.
+A reply is only ever sent after the creator reads, edits and approves it. Every post is approved by a person before it is published.</p>
+
+<h2>5. Who else handles data (service providers)</h2>
+<ul>
+<li><b>Meta (Instagram)</b> and <b>TikTok</b> - the platforms the creator connects; their own privacy policies apply to what they hold.</li>
+<li><b>DigitalOcean</b> - the server the service runs on, including its backups. <b>Cloudflare</b> - domain name service.</li>
+<li><b>Anthropic</b> and <b>Mistral AI</b> - AI text and image understanding (section 4).</li>
+<li><b>Dropbox</b> - the creator's media is copied from her own Dropbox folder to the server; nothing is changed or deleted in Dropbox.</li>
+<li><b>Telegram</b> or <b>ntfy</b> - push messages to the creator's phone, which can contain a caption or the start of a comment.</li>
+</ul>
+
+<h2>6. How long we keep it</h2>
+<ul>
+<li>Access tokens: until the account is disconnected (the tokens are then deleted) or the service is closed.</li>
+<li>Posts, media, comments and statistics: until the creator or we delete them, or the service is closed.</li>
+<li>Server backups: nightly database copies for 14 days, and the hosting provider's snapshots on its own schedule.</li>
+</ul>
+
+<h2>7. Security</h2>
+<p>The service is reached only over HTTPS and sits behind a login. Platform access tokens are encrypted in the database. Access is limited to the operator and the people they authorise.
+No system is perfectly secure; if we learn of a problem that affects your data we will tell the people concerned.</p>
+
+<h2>8. Your rights and choices</h2>
+<p>Depending on where you live (for example under the UK or EU GDPR) you may have the right to ask for a copy of your data, to correct it, to have it deleted, or to object to how it is used.
+If you are a person who commented on one of the creator's posts, write to <b>[[CONTACT EMAIL]]</b> and tell us the username and the post: we will delete the stored copy of your comment.
+You can also complain to your data protection authority.</p>
+
+<h2 id="data-deletion">9. Data deletion instructions</h2>
+<div class="box">
+<p><b>If you connected an account and want your data removed:</b></p>
+<ol>
+<li>Revoke access in the platform: on Instagram, <i>Settings → Apps and websites</i> (or the equivalent "Website permissions" page) and remove "Summer Content Studio"; on TikTok, <i>Settings and privacy → Security and permissions → Apps and services</i> (names can change) and remove it.
+This stops the service from using your account immediately.</li>
+<li>Email <b>[[CONTACT EMAIL]]</b> with the subject "Delete my data" and the account name. We will delete the stored access token, posts, media, comments and statistics linked to that account within <b>[[DELETION DAYS]] days</b> and confirm by email.
+Copies in backups disappear when the backups expire (section 6).</li>
+</ol>
+<p><b>If you only commented on a post:</b> email the same address with your username; we delete the stored copy of your comments.</p>
+</div>
+
+<h2>10. Children</h2>
+<p>The service is not directed at children and we do not knowingly process data about people under 13 (or the age required in your country). Content involving minors is not produced or published by this service.</p>
+
+<h2>11. Changes</h2>
+<p>If we change this policy we will update the date at the top. Material changes are announced to the connected creator.</p>
+
+<h2>12. Contact</h2>
+<p><b>[[OPERATOR NAME]]</b> · <b>[[CONTACT EMAIL]]</b></p>
+</main>
+</body>
+</html>

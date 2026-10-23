@@ -10,8 +10,18 @@ studio.itsmesummer.app {
 	reverse_proxy 127.0.0.1:8000
 }
 
-# Apex domain: later serves the public /privacy and /terms pages that TikTok/Meta developer apps
-# ask for. Until those pages exist, send visitors to nothing public:
+# Apex domain: STATIC public pages only - no login, no app behind it. The Meta and TikTok developer apps ask for a
+# Privacy Policy URL and a Terms of Service URL (https://itsmesummer.app/privacy and /terms); /privacy#data-deletion is the
+# data-deletion instructions page. The files live in deploy/site/ and are copied to /var/www/summer-site, which the
+# caddy user can read (see docs/DEPLOY.md, "Public pages"). Placeholders in them must be filled in first.
 itsmesummer.app {
-	respond "OK" 200
+	root * /var/www/summer-site
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+	}
+	try_files {path}.html {path}
+	file_server
 }

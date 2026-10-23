@@ -94,6 +94,9 @@ Official pages: <https://developers.facebook.com/docs/instagram-platform/instagr
    (Meta's docs: access to accounts you own and have added to the app).
 5. Set the **redirect URL** (the "OAuth redirect URIs" box) to exactly:
    `https://studio.<yourdomain>/oauth/instagram/callback`
+   Meta also asks for a **Privacy Policy URL**, a **Terms of Service URL** and **user data deletion** instructions before an app can leave
+   development mode (field names may differ): use the pages on your main domain, `https://<your-domain>/privacy`, `https://<your-domain>/terms` and
+   `https://<your-domain>/privacy#data-deletion` (for example `https://itsmesummer.app/privacy`). The developer sets these pages up (`docs/DEPLOY.md`, section 12); you only check the text.
 6. Copy the **Instagram app ID** and **Instagram app secret** from the same page.
    `.env`: `INSTAGRAM_APP_ID=…`, `INSTAGRAM_APP_SECRET=…`.
 7. In our dashboard: **Accounts → Connect Instagram** → Instagram's own page asks you to log in and press **Allow**.
@@ -124,6 +127,7 @@ the steps below come from the app's own requirements and are **(unconfirmed)**) 
 2. **Manage apps → Connect an app.** Name it `Summer Content`.
 3. Add the products **Login Kit** and **Content Posting API**. Scopes: `user.info.basic` and `video.upload`.
 4. **Redirect URI** (Login Kit): `https://studio.<yourdomain>/oauth/tiktok/callback`.
+   TikTok's app form also asks for a **Privacy Policy** and **Terms of Service** URL (**unconfirmed** which fields are mandatory): the same two apex-domain pages.
 5. Copy the **Client key** and **Client secret**. `.env`: `TIKTOK_CLIENT_KEY=…`, `TIKTOK_CLIENT_SECRET=…`.
 6. In the dashboard: **Accounts → Connect TikTok** → press **Allow** on TikTok's page.
 
