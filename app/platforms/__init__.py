@@ -54,3 +54,37 @@ def http_client(settings=None, timeout: float | None = None) -> httpx.Client:
 
     settings = settings or get_settings()
     return httpx.Client(timeout=timeout or settings.PLATFORM_TIMEOUT_SECONDS)
+
+
+def send(http: httpx.Client, method: str, url: str, **kwargs) -> httpx.Response:
+    """http.request with transport failures turned into classified PlatformErrors."""
+    try:
+        return http.request(method, url, **kwargs)
+    except httpx.TimeoutException as e:
+        raise PlatformError("timeout", "The platform did not answer in time.", True) from e
+    except httpx.TransportError as e:
+        raise PlatformError("connection_error", "Could not reach the platform.", True) from e
+
+
+def json_or_empty(resp: httpx.Response) -> dict:
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def callback_url(settings, platform: str) -> str:
+    """The OAuth redirect URI registered with the platform (built only from PUBLIC_BASE_URL)."""
+    if not settings.PUBLIC_BASE_URL:
+        raise PlatformError("not_configured", "PUBLIC_BASE_URL is not set.", False)
+    return f"{settings.PUBLIC_BASE_URL.rstrip('/')}/oauth/{platform}/callback"
+
+
+def publisher(platform: str):
+    """The platform module for 'instagram' / 'tiktok' (lazy: the modules import this package)."""
+    import importlib
+
+    if platform not in ("instagram", "tiktok"):
+        raise PlatformError("unsupported", f"No publisher for platform '{platform}'.", False)
+    return importlib.import_module(f"app.platforms.{platform}")

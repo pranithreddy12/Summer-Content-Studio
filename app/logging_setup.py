@@ -59,6 +59,9 @@ def configure_logging() -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.WARNING)
+    # httpx logs full request URLs at INFO; platform tokens can sit in query strings
+    for name in ("httpx", "httpx2", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

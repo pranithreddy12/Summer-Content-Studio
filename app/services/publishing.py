@@ -65,6 +65,12 @@ def asset_is_publishable(post: ContentPost) -> tuple[bool, Optional[str]]:
         return False, "media_required"
     if asset.storage_type == StorageType.external_url.value:
         return False, "media_not_publishable"
+    # Platform media rules (docs/PLATFORM_API_NOTES.md): Instagram images must be JPEG;
+    # TikTok inbox mode takes videos only.
+    if post.platform == "instagram" and asset.media_type == "image" and (asset.mime_type or "") != "image/jpeg"             and post.content_type != "reel":
+        return False, "media_not_publishable"
+    if post.platform == "tiktok" and asset.media_type != "video":
+        return False, "media_not_publishable"
     if asset.storage_type == StorageType.local_sync.value:
         try:
             resolve_asset_file(asset)

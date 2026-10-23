@@ -331,11 +331,13 @@ Every platform module exposes exactly these functions (no class); **each carries
 def authorize_url(settings, state: str, code_challenge: str | None) -> str
 def exchange_code(http, settings, code: str, code_verifier: str | None) -> TokenSet
 def refresh(http, settings, account) -> TokenSet
-def publish(http, account_token: str, post, media_url: str | None, media_path: Path | None) -> PublishResult
-def check_status(http, account_token: str, platform_ref: str) -> PublishResult | None   # stuck-claim check
-def fetch_metrics(http, account_token: str, external_post_id: str) -> dict
-def fetch_comments(http, account_token: str, external_post_id: str) -> list[dict]
-def send_reply(http, account_token: str, external_comment_id: str, text: str) -> str
+def publish(http, token, external_user_id, post, media_url, media_path, on_ref=None, caption=None) -> PublishResult
+def check_status(http, token, external_user_id, platform_ref) -> PublishResult | None   # stuck-claim check
+def fetch_metrics(http, token, external_user_id, external_post_id) -> dict
+def fetch_comments(http, token, external_user_id, external_post_id) -> list[dict]
+def send_reply(http, token, external_user_id, external_comment_id, text) -> str
+# v3.2 (B4): `external_user_id` added (IG endpoints are /<IG_ID>/...); refresh(account) needs .access_token/.refresh_token/.scopes/.external_user_id/.username
+# `PUBLISHERS` is the lazy `app.platforms.publisher(name)`; `caption` = render_caption(post)
 ```
 `TokenSet` = dataclass(access_token, refresh_token, expires_at, refresh_expires_at, scopes, external_user_id, username). TikTok implements metrics/comments/reply as `PlatformError("unsupported", ..., transient=False)`.
 
@@ -392,6 +394,7 @@ Caption sent = `caption` + `\n\n` + `" ".join("#"+h for h in hashtags)`; built i
 | `unsupported` | no | feature unavailable for that platform/app type |
 | `outside_posting_window` | n/a | pre-flight only (see step 2) |
 | `internal_error` | yes | |
+| `bad_request` | no | v3.2: any other 4xx the platform returns |
 
 Messages stored/displayed pass `sanitize(msg)`: strip anything matching the account's tokens, truncate 500.
 

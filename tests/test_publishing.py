@@ -20,6 +20,10 @@ TINY_PNG = base64.b64decode(
 )
 
 
+# Instagram images must be JPEG (docs/PLATFORM_API_NOTES.md): minimal JPEG header + marker bytes
+TINY_JPEG = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==")
+
+
 def aware(*args):
     return datetime(*args, tzinfo=timezone.utc)
 
@@ -40,7 +44,7 @@ def _approved_post(client, **overrides):
     """Create + approve an instagram feed post with an uploaded PNG asset."""
     assets = client.post(
         "/api/v1/assets/upload",
-        files={"file": ("a.png", TINY_PNG, "image/png")},
+        files={"file": ("a.jpg", TINY_JPEG, "image/jpeg")},
         data={"description": "d"},
     ).json()
     body = {
