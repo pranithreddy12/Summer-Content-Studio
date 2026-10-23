@@ -154,3 +154,8 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - **Docs are written for a non-technical client**, state what is unconfirmed, and mark every menu path as "may have moved"; TikTok setup steps are explicitly unconfirmed (the official pages were unreachable).
 - **Version 0.2.0** (`/health`, OpenAPI title).
 - **Footer/sidebar text follows the mode** instead of claiming "Phase 1 / nothing is published automatically".
+
+## Deployment files (2026-10-23)
+- `deploy/` (server setup, Caddy, systemd, backup) and `docs/DEPLOY.md` are the single deployment reference (`/srv/summer` layout). They were authored outside this build log; reviewed and kept.
+- The server installs from `requirements.lock` (exact tested versions) and the lock must stay portable: no `name @ file:///...` entries (checked by `tests/manual/build_delivery_zip.py`).
+- Server-side scripts and units are kept LF by `.gitattributes`.

@@ -1,0 +1,17 @@
+# /etc/systemd/system/summer-media-sync.service
+# Copies Lee's Dropbox folder to the server (never deletes), then registers new files in the Media Library.
+# Replace `dropbox:Summer` with the real rclone remote + folder name.
+[Unit]
+Description=Copy Dropbox media to the server and register it
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=summer
+Group=summer
+Environment=HOME=/srv/summer
+WorkingDirectory=/srv/summer/app
+EnvironmentFile=/srv/summer/app/.env
+ExecStart=/usr/bin/rclone copy dropbox:Summer /srv/summer/media_sync --min-size 1k --transfers 2
+# refuses (and sends a disk_low push) if free disk < MIN_FREE_DISK_GB
+ExecStartPost=/srv/summer/venv/bin/python -m app.cli sync-media

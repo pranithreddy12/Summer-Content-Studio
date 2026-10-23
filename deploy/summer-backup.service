@@ -1,0 +1,9 @@
+# /etc/systemd/system/summer-backup.service
+[Unit]
+Description=Nightly SQLite backup
+
+[Service]
+Type=oneshot
+User=summer
+Group=summer
+ExecStart=/srv/summer/app/deploy/backup.sh

@@ -1,0 +1,11 @@
+# /etc/systemd/system/summer-backup.timer
+[Unit]
+Description=Nightly SQLite backup (03:30)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=summer-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,3 +1,6 @@
+# Pinned versions for the server (Ubuntu 24.04 / Python 3.12). Regenerate with `pip freeze`, then replace
+# a requirement that points at a local wheel file on the build machine by an exact `name==version` pin, and re-check with:
+#   pip install --dry-run --python-version 3.12 --platform manylinux2014_x86_64 --only-binary=:all: --target X -r requirements.lock
 alembic==1.20.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -19,7 +22,7 @@ httpx2==2.13.1
 idna==3.20
 iniconfig==2.3.1
 Jinja2==3.1.6
-jiter @ file:///C:/Users/prani/AppData/Local/Temp/jiter_dl/jiter-0.17.0-cp314-cp314-win_amd64.whl#sha256=ac3c6ee3264d6f5c44c617f90bc7e8b9e1587e7d6708c9d8f811cb65582ee312
+jiter==0.17.0
 Mako==1.4.3
 MarkupSafe==3.0.4
 opentelemetry-api==1.45.1
@@ -28,7 +31,7 @@ pluggy==1.6.0
 pycparser==3.11
 pydantic==2.14.1
 pydantic-settings==2.16.0
-pydantic_core @ file:///C:/Users/prani/AppData/Local/Temp/pc_wheel_download/pydantic_core-2.50.1-cp314-cp314-win_amd64.whl#sha256=d32f3acc081cc3923386d88f422cde8892335e95f034e0104bb4cf9310d9915f
+pydantic-core==2.50.1
 Pygments==2.21.0
 pytest==9.1.1
 python-dotenv==1.2.4

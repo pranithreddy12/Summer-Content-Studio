@@ -1,0 +1,20 @@
+# /etc/systemd/system/summer-worker.service
+# The scheduler / publishing worker. Run exactly ONE. Behaviour depends on PUBLISHING_MODE in .env
+# (off / reminders / dry_run / live). `reminders` mode needs a push channel (NOTIFY_PROVIDER) or the worker refuses to start.
+[Unit]
+Description=Summer scheduler / publishing worker
+After=network.target summer-web.service
+
+[Service]
+User=summer
+Group=summer
+WorkingDirectory=/srv/summer/app
+EnvironmentFile=/srv/summer/app/.env
+ExecStart=/srv/summer/venv/bin/python -m app.cli worker
+Restart=on-failure
+RestartSec=5
+# SIGTERM lets the worker finish its current step before exiting
+TimeoutStopSec=330
+
+[Install]
+WantedBy=multi-user.target

@@ -47,7 +47,7 @@ scp ../summer-app.tgz deploy@SERVER_IP:/tmp/
 # on the server
 sudo -u summer tar -xzf /tmp/summer-app.tgz -C /srv/summer/app
 sudo -u summer python3 -m venv /srv/summer/venv
-sudo -u summer /srv/summer/venv/bin/pip install -r /srv/summer/app/requirements.txt
+sudo -u summer /srv/summer/venv/bin/pip install -r /srv/summer/app/requirements.lock   # exact tested versions, not requirements.txt
 ```
 Generate the two secrets (keep them safe — losing `TOKEN_ENCRYPTION_KEY` means reconnecting every account):
 ```bash
@@ -84,6 +84,7 @@ After changing `.env`: `sudo systemctl restart summer-web summer-worker`.
 
 ## 6. Dropbox → server copy (rclone)
 Lee's Dropbox is a share link the app cannot read; the files must be on the server. `rclone copy` never deletes.
+**The folder must be in Lee's own Dropbox.** rclone logs in as Lee and lists *his* files: a folder that was only *shared with him* (or a bare share link) does not appear until he uses *Add to my Dropbox* on it (or copies it into his own Dropbox).
 ```bash
 curl https://rclone.org/install.sh | sudo bash
 # Lee authorises on HIS computer (no browser on the server):  rclone authorize "dropbox"   → he sends you the token privately
@@ -98,7 +99,7 @@ Edit the folder name in `deploy/summer-media-sync.service`, then install the 15-
 sudo cp /srv/summer/app/deploy/summer-media-sync.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now summer-media-sync.timer
 ```
-`rclone.conf` holds a Dropbox token: `chmod 600`, owned by `summer`, **never in git, never in plain backups**. `cli sync-media` refuses when free disk < `MIN_FREE_DISK_GB` (and sends a `disk_low` push). Least privilege: a Dropbox app with read-only scopes (`docs/PLATFORM_SETUP.md` §6).
+`rclone.conf` holds a Dropbox token: `chmod 600`, owned by `summer`, **never in git, never in plain backups**. `cli sync-media` refuses when free disk < `MIN_FREE_DISK_GB` (and sends a `disk_low` push). Access level: the simplest setup uses rclone's built-in Dropbox app (broad access to Lee's Dropbox, revocable at <https://www.dropbox.com/account/connected_apps>). A **read-only** custom Dropbox app (`files.metadata.read` + `files.content.read`) is the least-privilege option, but it is **unconfirmed**: rclone's own documentation lists file *write* scopes as the minimum for its custom-app setup, so try read-only first for a download-only `copy` and fall back to the built-in app if rclone refuses (`docs/PLATFORM_SETUP.md` §6, `docs/PLATFORM_API_NOTES.md`).
 
 ## 7. Backups
 - **DigitalOcean backups** (enabled in step 2) cover the whole server weekly/daily.
@@ -130,8 +131,23 @@ Change one thing at a time; restart `summer-web summer-worker` after each `.env`
 | Telegram/ntfy, Meta, TikTok, Dropbox/rclone | free |
 
 ## 11. Updating or rolling back
-Update: repeat the `tar`/`scp` copy (step 5), `sudo -u summer /srv/summer/venv/bin/pip install -r requirements.txt`, `sudo -u summer bash -c 'cd /srv/summer/app && /srv/summer/venv/bin/python -m app.cli init-db'` (runs migrations), then `sudo systemctl restart summer-web summer-worker`.
+Update: repeat the `tar`/`scp` copy (step 5), `sudo -u summer /srv/summer/venv/bin/pip install -r /srv/summer/app/requirements.lock`, `sudo -u summer bash -c 'cd /srv/summer/app && /srv/summer/venv/bin/python -m app.cli init-db'` (runs migrations), then `sudo systemctl restart summer-web summer-worker`.
 Roll back: restore the previous archive, and the latest `data/app.db` backup if a migration went wrong.
 
 ## 12. Still needed for the public developer-app pages
 TikTok and Meta developer apps typically ask for **Privacy Policy** and **Terms** URLs on your domain — add simple `/privacy` and `/terms` pages (apex domain) before submitting those apps; check the exact fields in each portal.
+
+## 13. Troubleshooting
+| Symptom | Look at |
+|---|---|
+| `summer-web` will not start; log says `Refusing to start with APP_ENV=production` | set `DASHBOARD_USERNAME` and a `DASHBOARD_PASSWORD` of 12+ characters in `.env` |
+| `summer-worker` exits at once, restarts every few seconds | `journalctl -u summer-worker -n 20`: `live` needs `PUBLIC_BASE_URL` (https), `TOKEN_ENCRYPTION_KEY`, `MEDIA_URL_SECRET`; `reminders` needs a configured `NOTIFY_PROVIDER` |
+| `bash\r: bad interpreter` / `\r: command not found` | a script or unit file has Windows line endings: `sed -i 's/\r$//' deploy/*` (the repo's `.gitattributes` keeps them LF) |
+| Caddy has no certificate / browser says "not secure" | the DNS record must be **DNS only (grey cloud)** and point at the droplet; `journalctl -u caddy -n 50`; ports 80 and 443 open (ufw and the DigitalOcean firewall) |
+| `/health` shows `"worker_ok": false` | the worker is stopped or stuck: `systemctl status summer-worker`, `journalctl -u summer-worker -n 50` |
+| A post shows **failed** | open the post: the error code and attempts table say why; fix the cause, then **Retry** |
+| Instagram says the media is not publishable | images must be JPEG (Reels/videos are fine) |
+| An account shows **expired** | **Accounts → Reconnect** (tokens normally renew by themselves) |
+| Nothing arrives from Dropbox | `journalctl -u summer-media-sync -n 50`; the folder must be in Lee's own Dropbox (step 6); a nearly full disk pauses the sync and sends a `disk_low` push |
+| Pushes do not arrive | **Accounts → Send test notification** or `python -m app.cli notify-test`; check the provider credentials in `.env` and restart the services |
+| Restore a database backup | `sudo systemctl stop summer-web summer-worker`, copy `/srv/summer/backups/app-<date>.db` over `/srv/summer/app/data/app.db` (owner `summer`), start both |

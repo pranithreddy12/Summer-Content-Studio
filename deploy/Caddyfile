@@ -1,0 +1,17 @@
+# /etc/caddy/Caddyfile  -  Caddy fetches and renews the HTTPS certificate automatically.
+# Cloudflare DNS for `studio` must be "DNS only" (grey cloud) so Caddy can get the certificate
+# and Instagram/TikTok can fetch media directly.
+
+studio.itsmesummer.app {
+	encode zstd gzip
+	request_body {
+		max_size 600MB   # uploads of videos up to 500 MB (MAX_VIDEO_MB)
+	}
+	reverse_proxy 127.0.0.1:8000
+}
+
+# Apex domain: later serves the public /privacy and /terms pages that TikTok/Meta developer apps
+# ask for. Until those pages exist, send visitors to nothing public:
+itsmesummer.app {
+	respond "OK" 200
+}

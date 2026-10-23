@@ -1,0 +1,11 @@
+# /etc/systemd/system/summer-media-sync.timer
+[Unit]
+Description=Every 15 minutes: copy Dropbox media to the server
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=summer-media-sync.service
+
+[Install]
+WantedBy=timers.target
