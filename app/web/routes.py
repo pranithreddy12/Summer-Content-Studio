@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.dependencies import get_platform_http
 from app.config import get_settings
 from app.db import get_db, utcnow
 from app.models import (
@@ -619,9 +620,13 @@ async def post_detail(
     campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
     all_tags = db.execute(select(Tag).order_by(Tag.name)).scalars().all()
 
+    from app.services.publishing import list_attempts, preflight_reasons
+
     return _template_response("post_detail.html", {
         "request": request,
         "post": post,
+        "attempts": list_attempts(db, post_id),
+        "preflight": preflight_reasons(db, post, utcnow()) if post.status in ("approved", "scheduled", "failed") else [],
         "variants": variants,
         "campaigns": campaigns,
         "all_tags": all_tags,
@@ -1078,3 +1083,81 @@ async def profile_update(
         return redirect_with_flash(f"/profiles/{profile_id}", "Profile updated successfully")
     except Exception as e:
         return redirect_with_flash(f"/profiles/{profile_id}", str(e), "error")
+
+# =========================================================================
+# Phase 2 B5: publish / retry / accounts
+# =========================================================================
+
+@router.post("/posts/{post_id}/publish")
+def post_publish(post_id: int, override_window: str = Form(""), db: Session = Depends(get_db),
+                 http=Depends(get_platform_http)):
+    """Publish now (live) or record a dry run. Sync def: a publish can poll the platform for minutes."""
+    from app.services import AppError
+    from app.services.publishing import publish_post
+
+    try:
+        post = publish_post(db, post_id, trigger="manual", http=http, override_window=bool(override_window))
+    except AppError as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.message, "error")
+    msgs = {
+        "published": "Published.",
+        "sent_to_drafts": "Sent to your TikTok drafts - open TikTok, add the AI label and press Publish.",
+        "scheduled": ("Dry run recorded - nothing was sent." if get_settings().PUBLISHING_MODE == "dry_run"
+                      else "The platform had a temporary problem; it will be retried automatically."),
+        "failed": "Publishing failed: " + (post.last_publish_error or "see attempts below"),
+    }
+    return redirect_with_flash(f"/posts/{post_id}", msgs.get(post.status, f"Status: {post.status}"),
+                               "error" if post.status == "failed" else "ok")
+
+
+@router.post("/posts/{post_id}/retry")
+async def post_retry(post_id: int, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services.publishing import retry_post
+
+    try:
+        retry_post(db, post_id)
+    except AppError as e:
+        return redirect_with_flash(f"/posts/{post_id}", e.message, "error")
+    return redirect_with_flash(f"/posts/{post_id}", "Back on the schedule - it will publish inside the posting window.")
+
+
+@router.get("/accounts", response_class=HTMLResponse)
+async def accounts_page(request: Request, db: Session = Depends(get_db)):
+    from app.services import accounts as svc
+
+    settings = get_settings()
+    profiles = db.execute(select(ModelProfile).where(ModelProfile.is_active == True).order_by(ModelProfile.id)).scalars().all()
+    by_key = {(a.model_profile_id, a.platform): a for a in svc.list_accounts(db)}
+    cards = [
+        {"profile": p, "platform": platform, "account": by_key.get((p.id, platform)),
+         "missing": svc.missing_env(platform, settings)}
+        for p in profiles for platform in svc.PLATFORMS
+    ]
+    return _template_response("accounts.html", {
+        "request": request, "cards": cards, "notify_provider": settings.NOTIFY_PROVIDER,
+        "notify_ready": settings.notify_configured, "flash": get_flash(request),
+    })
+
+
+@router.post("/accounts/{account_id}/disconnect")
+async def accounts_disconnect(account_id: int, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import accounts as svc
+
+    try:
+        svc.disconnect(db, account_id)
+    except AppError as e:
+        return redirect_with_flash("/accounts", e.message, "error")
+    return redirect_with_flash("/accounts", "Account disconnected - its tokens were deleted.")
+
+
+@router.post("/accounts/notify-test")
+async def accounts_notify_test(db: Session = Depends(get_db)):
+    from app.services.notifications import send_test
+
+    if not get_settings().notify_configured:
+        return redirect_with_flash("/accounts", "No push channel is configured (NOTIFY_PROVIDER).", "error")
+    ok = send_test(db)
+    return redirect_with_flash("/accounts", "Test notification sent." if ok else "The provider refused the test push.",
+                               "ok" if ok else "error")

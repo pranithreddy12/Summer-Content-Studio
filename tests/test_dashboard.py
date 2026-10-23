@@ -342,3 +342,66 @@ def test_generate_random_both_platforms_creates_pair(client, fake_claude):
     keys = {p.get("group_key") for p in pair}
     assert len(keys) == 1 and next(iter(keys))  # same, non-empty group_key
     assert all(p["status"] == "draft" for p in pair)  # drafts only, never approved
+
+
+# ---- Phase 2 B5: accounts page + publish panel ------------------------------
+
+def test_accounts_page_lists_platforms_and_names_missing_env_only(client):
+    page = client.get("/accounts")
+    assert page.status_code == 200
+    assert "Instagram" in page.text and "TikTok" in page.text
+    assert "INSTAGRAM_APP_ID" in page.text and "TOKEN_ENCRYPTION_KEY" in page.text   # names, never values
+    assert "/oauth/instagram/start" not in page.text                                    # cannot connect yet
+
+
+def test_accounts_page_offers_connect_when_configured(phase2, client):
+    page = client.get("/accounts").text
+    assert 'href="/oauth/instagram/start?profile_id=1"' in page and 'href="/oauth/tiktok/start?profile_id=1"' in page
+
+
+def test_accounts_notify_test_without_channel_is_a_flash_error(client):
+    r = client.post("/accounts/notify-test", follow_redirects=False)
+    assert r.status_code == 303 and "kind=error" in r.headers["location"]
+
+
+def test_post_detail_shows_publish_panel_per_mode(phase2, client):
+    from datetime import datetime, timezone
+    from tests.test_publish_live import make_post
+
+    pid = make_post(client)
+    assert 'id="publish-panel"' not in client.get(f"/posts/{pid}").text            # mode off: Phase 1 / manual only
+    phase2(PUBLISHING_MODE="dry_run")
+    page = client.get(f"/posts/{pid}").text
+    assert 'id="publish-panel"' in page and "Dry run now" in page and "account_not_connected" not in page
+    phase2(PUBLISHING_MODE="live")
+    page = client.get(f"/posts/{pid}").text
+    assert "Publish now" in page and "account_not_connected" in page and "disabled" in page   # blocked until connected
+
+
+def test_dashboard_publish_in_dry_run_flashes_and_records_attempt(phase2, client, monkeypatch):
+    from datetime import datetime, timezone
+    from tests.test_publish_live import NOON, make_post
+    import app.services.publishing as p
+
+    phase2(PUBLISHING_MODE="dry_run")
+    pid = make_post(client)
+    monkeypatch.setattr(p, "check_publishable", lambda *a, **k: None)
+    r = client.post(f"/posts/{pid}/publish", follow_redirects=False)
+    assert r.status_code == 303 and "Dry+run+recorded" in r.headers["location"].replace("%20", "+")
+    assert "would publish" in client.get(f"/posts/{pid}").text
+
+
+def test_dashboard_publish_when_off_is_a_flash_error(client):
+    from tests.test_publish_live import make_post
+
+    pid = make_post(client)
+    r = client.post(f"/posts/{pid}/publish", follow_redirects=False)
+    assert r.status_code == 303 and "kind=error" in r.headers["location"]
+
+
+def test_dashboard_retry_only_for_failed(client):
+    from tests.test_publish_live import make_post
+
+    pid = make_post(client)
+    r = client.post(f"/posts/{pid}/retry", follow_redirects=False)
+    assert r.status_code == 303 and "kind=error" in r.headers["location"]

@@ -1,12 +1,21 @@
 """JSON logging setup."""
 
 import json
+import re
 import logging
 import sys
 import time
 from typing import Any, Dict, Optional
 
 from app.config import get_settings
+
+
+_SECRET_FRAGMENT = re.compile(r"""(access_token|refresh_token|client_secret|code_verifier)=[^&\s"']+""")
+
+
+def redact(text: str) -> str:
+    """Blank `access_token=...` style fragments (platform tokens ride in query strings)."""
+    return _SECRET_FRAGMENT.sub(r"\g<1>=[redacted]", text)
 
 
 class JsonFormatter(logging.Formatter):
@@ -17,7 +26,7 @@ class JsonFormatter(logging.Formatter):
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
             "level": record.levelname,
             "logger": record.name,
-            "msg": record.getMessage(),
+            "msg": redact(record.getMessage()),
         }
 
         # Add extra fields from record.__dict__
@@ -33,7 +42,7 @@ class JsonFormatter(logging.Formatter):
                     log_data[key] = value
 
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            log_data["exception"] = redact(self.formatException(record.exc_info))
 
         return json.dumps(log_data, ensure_ascii=False)
 

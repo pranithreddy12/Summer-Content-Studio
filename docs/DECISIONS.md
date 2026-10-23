@@ -122,3 +122,14 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 ## Permanent asset deletion (added 2026-10-20)
 - `delete_asset_permanently` (services/assets.py). Allowed for `upload` (row + uploaded file, path containment-checked) and `external_url` (row only). `local_sync` is refused (409 `synced_asset`): the Dropbox folder is read-only to the app and a deleted row would be re-registered by the next Sync; archive keeps the relpath registered so it is skipped.
 - Assets used by non-archived posts need `force=true` (409 `asset_in_use` otherwise); posts and generation logs are detached (`media_asset_id` -> NULL), never deleted. Default `DELETE` still archives, so PLAN section 12 behaviour is unchanged.
+
+
+## Phase 2 B4/B5 decisions (2026-10-23)
+- **Platform calls follow docs/PLATFORM_API_NOTES.md.** Instagram (Instagram Login) was verified against Meta's pages; the TikTok pages returned 503, so TikTok details are marked SECONDARY/UNVERIFIED and are proven live in L3. Nothing may be coded from memory without being marked.
+- **Instagram images must be JPEG** (Meta's rule); PNG/WebP is rejected at pre-flight with `media_not_publishable` rather than failing at Meta. Videos always publish as Reels.
+- **Polling is synchronous** (60 s x 5 for Instagram, 3 s x 20 for TikTok); the worker blocks during a publish. Fine for <= 2 posts/day per platform.
+- **OAuth without PKCE**: only a random single-use `state` (10 min). Neither documented flow requires PKCE.
+- **Tokens**: Fernet (`cryptography`), key in `TOKEN_ENCRYPTION_KEY`; `AccountOut` has no token fields; the log formatter and `sanitize()` strip `access_token=` style fragments; httpx INFO logging is silenced.
+- **`/m/{token}`**: HMAC + 1 h expiry, GET/HEAD only, the sole route without Basic auth (besides /health).
+- **Dry run never claims** and writes one idempotent attempt per (post, planned time); **retry** only re-schedules, the worker publishes inside the window.
+- **Failure visibility over silent skipping**: a missing media file or expired token fails the post and pushes `publish_failed`.

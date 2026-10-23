@@ -207,3 +207,20 @@ def test_post_detail_banner_follows_mode(app, client, monkeypatch):
     page = client.get(f"/posts/{pid}").text
     assert "publish automatically while the scheduler runs" in page
     assert "NOT published automatically" not in page
+
+
+def test_log_formatter_redacts_token_fragments():
+    import json
+    import logging
+
+    from app.logging_setup import JsonFormatter
+
+    rec = logging.LogRecord("x", logging.ERROR, __file__, 1, "GET https://g/x?fields=a&access_token=SECRET123&b=1", None, None)
+    out = json.loads(JsonFormatter().format(rec))["msg"]
+    assert "SECRET123" not in out and "access_token=[redacted]" in out and "fields=a" in out
+    try:
+        raise RuntimeError("failed url ?client_secret=TOPSECRET ok")
+    except RuntimeError:
+        import sys
+        rec = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom", None, sys.exc_info())
+    assert "TOPSECRET" not in json.loads(JsonFormatter().format(rec))["exception"]

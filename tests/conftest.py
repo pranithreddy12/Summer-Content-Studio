@@ -198,3 +198,42 @@ def halloween_asset(client) -> dict:
     response = client.post("/api/v1/assets/upload", files=files, data=data)
     assert response.status_code == 201, f"Upload failed: {response.text}"
     return response.json()
+
+# =========================================================================
+# Phase 2 helpers
+# =========================================================================
+
+@pytest.fixture
+def env():
+    """Set env vars for one test (and clear the settings cache); restored afterwards.
+    Request it BEFORE `client`/`app` when the value must be seen by create_app()."""
+    import os
+
+    from app.config import clear_settings_cache
+
+    saved = {}
+
+    def setter(**kw):
+        for k, v in kw.items():
+            saved.setdefault(k, os.environ.get(k))
+            os.environ[k] = v
+        clear_settings_cache()
+
+    yield setter
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    clear_settings_cache()
+
+
+@pytest.fixture
+def phase2(env):
+    """Everything a connected, publishing setup needs (fake values), mode still `off`."""
+    from cryptography.fernet import Fernet
+
+    env(TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode(), MEDIA_URL_SECRET="media-secret-for-tests",
+        PUBLIC_BASE_URL="https://studio.example.com", INSTAGRAM_APP_ID="igapp",
+        INSTAGRAM_APP_SECRET="ig-secret", TIKTOK_CLIENT_KEY="ttkey", TIKTOK_CLIENT_SECRET="tt-secret")
+    return env

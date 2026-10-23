@@ -12,6 +12,7 @@
 | v1 | 2026-10-17 | First plan (Instagram, TikTok, X). |
 | v2 / v2.1 | 2026-10-20/21 | Client answers: X dropped; TikTok inbox first; weekly planner; push notifications; Dropbox copy via rclone; 10 posts/week **per platform, mirrored**; hard window 08:00–21:00 (tz `Europe/London`, ⚠ confirm); Creator account confirmed; Lee rents server/domain himself; Anthropic key chosen (pending). |
 | **v3** | 2026-10-21 | **Build-now restructure.** New §0a readiness matrix; milestones split into **offline build B0–B8** and **live L1–L6**; new **`PUBLISHING_MODE`** (`off` / `reminders` / `dry_run` / `live`) replaces the on/off kill switch; **manual-reminder mode** (Halloween helper: push at slot time → human posts → *Mark as posted*); **dry-run mode** (worker proves the pipeline without touching any platform); **posting-window utilities** as a shared service; **API-notes rule** (verify every platform call against official docs before coding it, record in `docs/PLATFORM_API_NOTES.md`); optional **L0 developer-live path** (own test accounts + tunnel + ntfy) so live proof does not have to wait for Lee. |
+| **v3.2** | 2026-10-23 | B4/B5 as built: platform signatures take `external_user_id`; `bad_request` code; dry run never claims; retry returns to the schedule; JPEG-only Instagram images. |
 | **v3.1** | 2026-10-22 | **Validation patch** (defects found building B1–B3): mirroring made real (shared day pattern + sibling pinning), weekly budget, window end margin, retryable notifications, reminder semantics, blank-env = unset, test isolation, Halloween deployment caveat. |
 
 ---
@@ -372,7 +373,7 @@ Caption sent = `caption` + `\n\n` + `" ".join("#"+h for h in hashtags)`; built i
 4. Insert `publish_attempts` (attempt_no = count+1), commit.
 5. Ensure fresh token (`accounts.get_valid_token`, refresh if < 5 min left).
 6. Build `media_url` (§11) and/or `media_path`; call `PUBLISHERS[platform].publish(...)`. Save `platform_ref` on the attempt as soon as known (callback `on_ref(ref)` → commit) so a crash after container creation is recoverable.
-6a. **Dry run:** instead of 5–6, build the full payload, **send no HTTP**, finish the attempt with `trigger='dry_run'`, `success=NULL`, `error_message="dry run: would publish"`, release the claim back to `scheduled`, do not increment `publish_attempt_count`; at most one dry-run attempt per post per planned time (idempotent).
+6a. **Dry run (v3.2, as built):** runs pre-flight + payload check (file exists, caption renders), **sends no HTTP and never claims** (status, `publish_attempt_count`, `claimed_at` untouched), and writes ONE `publish_attempts` row per (post, planned time): `trigger='dry_run'`, `success=NULL`, `platform_ref='dry:<planned_publish_at>'` (the idempotency marker), `error_message='dry run: would publish <type> to <platform> (<n> chars, media <file>)'`. No connected account is needed. The worker's `dry_runs` counter counts NEW attempt rows only.
 7. Success → `published` (TikTok inbox: `sent_to_drafts` + `tiktok_ready` push), `published_via='api'`, `published_at`, `external_post_id`, `external_url`, `next_attempt_at=None`, `last_publish_error=None`; attempt success. One commit.
 8. `PlatformError` → attempt failed with code/message;
    - `transient` and `publish_attempt_count < PUBLISH_MAX_ATTEMPTS` → back to `scheduled`, `next_attempt_at = clamp_to_window(now + backoff[n])` (5, 15, 60 min).
@@ -407,7 +408,7 @@ Messages stored/displayed pass `sanitize(msg)`: strip anything matching the acco
 | **mark_posted (user)** | **approved, scheduled, sent_to_drafts** | **published** | `published_via='manual'`, optional `external_url` (https); works in **every** `PUBLISHING_MODE` (the human asserts they posted it) |
 | publish_retry (service) | publishing | scheduled | `next_attempt_at` set |
 | publish_fail (service) | publishing | failed | |
-| retry (user) | failed | scheduled if planned time is in the future else `approved` + immediate publish | resets `publish_attempt_count=0` |
+| retry (user) | failed | scheduled | v3.2: planned time kept if still in the future, else set to now; `publish_attempt_count=0`, error cleared. Nothing is sent from the action: the worker publishes it inside the posting window (hard rule). |
 | edit (user) | failed | draft | same as other content edits |
 | archive | + failed | archived | |
 | plan (planner, service) | approved | scheduled | sets `planned_publish_at`, `planned_by='planner'` |
@@ -664,7 +665,7 @@ Command unchanged: `python -m pytest`. Real counts in each milestone summary (ba
 
 **B4 — Platform modules + API notes.** First `docs/PLATFORM_API_NOTES.md` (rule 10: fetch the official Instagram and TikTok docs, record endpoints/params/samples/URLs/dates, mark each `VERIFIED-DOC`/`UNVERIFIED`), then `platforms/{instagram,tiktok}.py` (all §7 functions), `PlatformError` mapping, and platform tests with doc-derived fixtures. **Done when:** platform tests green; every `UNVERIFIED` item is listed in the L-milestone checklists.
 
-**B5 — Accounts (OAuth) + publishing service.** `services/accounts.py`, `/oauth/*`, accounts page, `cli refresh-tokens`; `services/publishing.py` (all §8 incl. dry run, retries clamped to the window, transitions); publish/retry/attempts API; post-detail publish panel; signed media route + `test_media_public`. **Done when:** tests green incl. every §8 case; with `PUBLISHING_MODE=dry_run` on a scratch DB the worker produces "would publish" attempts for due posts and sends **zero** HTTP.
+**B5 — Accounts (OAuth) + publishing service.** `services/accounts.py`, `/oauth/*`, accounts page, `cli refresh-tokens`; `services/publishing.py` (all §8 incl. dry run, retries clamped to the window, transitions); publish/retry/attempts API; post-detail publish panel; signed media route + `test_media_public`. **Done when:** tests green incl. every §8 case; with `PUBLISHING_MODE=dry_run` on a scratch DB the worker produces "would publish" attempts for due posts and sends **zero** HTTP. **Built 2026-10-23:** pre-flight needs a connected account only in `live`; a vanished media file fails the post visibly (`media_not_publishable` + `publish_failed` push) instead of being skipped forever; OAuth uses `state` only (no PKCE: neither documented flow requires it); `GET /m/{token}` skips Basic auth for GET/HEAD only; the log formatter redacts `access_token=…`-style fragments.
 
 **B6 — Worker complete.** `services/scheduler.py` full `run_once` (stuck-claim recovery, token refresh, planner tick, engagement hook), graceful shutdown, `/health.worker_ok`. **Done when:** `test_scheduler.py` green (window respected in all modes, no double publish, recovery); a kill-and-restart scratch run neither loses nor duplicates a (fake-platform) post.
 

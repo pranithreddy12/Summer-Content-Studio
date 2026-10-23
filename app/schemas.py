@@ -321,6 +321,37 @@ class PostOut(BaseSchema):
 # Error schemas
 # =========================================================================
 
+class AccountOut(BaseSchema):
+    """A connected platform account. Deliberately has NO token fields (PLAN §15)."""
+
+    id: int
+    model_profile_id: int
+    platform: str
+    username: str
+    status: str
+    token_expires_at: Optional[datetime] = None
+    scopes: List[str] = []
+    last_error: Optional[str] = None
+
+
+class AttemptOut(BaseSchema):
+    id: int
+    post_id: int
+    attempt_no: int
+    trigger: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    success: Optional[bool] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    platform_ref: Optional[str] = None
+    http_status: Optional[int] = None
+
+
+class PublishRequest(BaseSchema):
+    override_window: bool = False
+
+
 class MarkPostedRequest(BaseSchema):
     """Body for POST /posts/{id}/mark-posted - external URL is optional."""
 

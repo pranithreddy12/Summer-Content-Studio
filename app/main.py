@@ -137,8 +137,9 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def auth_and_csrf_middleware(request: Request, call_next):
         """Apply basic auth (all routes except /health) and dashboard origin check."""
-        # Skip auth for health endpoint
-        if request.url.path == "/health":
+        # Skip auth for the health endpoint and the signed public media route (/m/{token}:
+        # HMAC + expiry protect it; Instagram must be able to fetch it without credentials)
+        if request.url.path == "/health" or (request.url.path.startswith("/m/") and request.method in ("GET", "HEAD")):
             return await call_next(request)
 
         # Basic auth when enabled (secrets.compare_digest, constant-time)
@@ -240,6 +241,7 @@ def create_app() -> FastAPI:
         }
 
     from app.api import profiles, assets, content, posts, tags, planner, notifications
+    from app.api import accounts as accounts_api, media_public, publishing as publishing_api
     from app.web import routes as web_routes
 
     app.include_router(profiles.router, prefix="/api/v1")
@@ -249,6 +251,10 @@ def create_app() -> FastAPI:
     app.include_router(tags.router, prefix="/api/v1")
     app.include_router(planner.router, prefix="/api/v1")
     app.include_router(notifications.router, prefix="/api/v1")
+    app.include_router(accounts_api.router, prefix="/api/v1")
+    app.include_router(publishing_api.router, prefix="/api/v1")
+    app.include_router(accounts_api.oauth_router)
+    app.include_router(media_public.router)
     app.include_router(web_routes.router)
 
     # Static files

@@ -42,6 +42,10 @@
                     <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="11.5" rx="2"/><path d="M4.4 12.2l2.4-2.2 2.4 2.2 2.4-2.2"/></svg>
                     Calendar
                 </a></li>
+                <li class="nav-item"><a href="/accounts" {% if request.url.path.startswith('/accounts') %}class="active"{% endif %}>
+                    <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6.5 9.5l3-3M5 11a2.5 2.5 0 0 1 0-3.5l1.5-1.5M11 5a2.5 2.5 0 0 1 0 3.5L9.5 10"/></svg>
+                    Accounts
+                </a></li>
                 <li class="nav-item"><a href="/profiles" {% if request.url.path.startswith('/profiles') %}class="active"{% endif %}>
                     <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 13.6a5.5 5.5 0 0 1 10.5 0"/></svg>
                     Profiles

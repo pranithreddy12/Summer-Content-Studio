@@ -170,5 +170,28 @@ def notify_test() -> None:
     click.echo("Test notification sent." if ok else "Provider refused - check the log.")
 
 
+@cli.command()
+@click.option("--days", default=7, show_default=True, help="Refresh tokens that expire within this many days.")
+def refresh_tokens(days) -> None:
+    """Refresh platform tokens that are close to expiry (the worker does this automatically in B6)."""
+    from datetime import timedelta
+
+    from app.db import utcnow
+    from app.platforms import PlatformError, http_client
+    from app.services import accounts
+
+    http = http_client()
+    with session_scope() as db:
+        due = accounts.accounts_expiring(db, utcnow(), timedelta(days=days))
+        if not due:
+            click.echo("Nothing to refresh.")
+        for acct in due:
+            try:
+                accounts.refresh_account(db, acct, http)
+                click.echo(f"{acct.platform} @{acct.username}: refreshed, now expires {acct.token_expires_at:%Y-%m-%d}")
+            except PlatformError as e:
+                click.echo(f"{acct.platform} @{acct.username}: {e.code} - {accounts.sanitize(e.message)}", err=True)
+
+
 if __name__ == "__main__":
     cli()

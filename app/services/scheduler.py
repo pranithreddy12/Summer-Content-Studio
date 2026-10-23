@@ -76,6 +76,25 @@ def due_reminder_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
     return in_window_rows
 
 
+def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
+    """Scheduled posts whose planned time and retry time have been reached, inside their
+    posting window (hard rule). Oldest planned first."""
+    from sqlalchemy import or_
+
+    from app.services.publishing import get_rule
+    from app.services.window import in_window
+
+    rows = db.execute(
+        select(ContentPost).where(
+            ContentPost.status == PostStatus.scheduled.value,
+            ContentPost.planned_publish_at.isnot(None),
+            ContentPost.planned_publish_at <= now,
+            or_(ContentPost.next_attempt_at.is_(None), ContentPost.next_attempt_at <= now),
+        ).order_by(ContentPost.planned_publish_at.asc()).limit(limit)
+    ).scalars().all()
+    return [p for p in rows if in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+
+
 def run_once(db, now, http=None) -> dict:
     """One worker iteration. Returns counters (used by tests and the heartbeat)."""
     from app.services.notifications import notify
@@ -117,12 +136,36 @@ def run_once(db, now, http=None) -> dict:
         db.commit()
 
     elif mode in ("dry_run", "live"):
-        # Publish pipeline is wired in milestone B5 (publishing.publish_post);
-        # B6 adds stuck-claim recovery, token refresh, planner tick + engagement.
-        posts = due_reminder_posts(db, now)
+        # Due, inside the window, retry time reached -> publish (live) or record a dry run.
+        # One failing post never stops the loop. B6 adds stuck-claim recovery, token refresh,
+        # planner tick and engagement.
+        from app.services.publishing import publish_post
+
+        from sqlalchemy import func
+
+        from app.models import PublishAttempt
+
+        def dry_attempts() -> int:
+            return db.scalar(select(func.count()).select_from(PublishAttempt).where(PublishAttempt.trigger == "dry_run"))
+
+        before = dry_attempts()
+        posts = due_publish_posts(db, now)
         result["due"] = len(posts)
-        result["note"] = "publish pipeline activates in B5/B6"
-        result["skipped"] = len(posts)
+        for post in posts:
+            try:
+                out = publish_post(db, post.id, trigger="retry" if post.next_attempt_at else "schedule",
+                                   now=now, http=http)
+            except Exception as e:  # pre-flight problem (no account, bad media...): post untouched, try next loop
+                db.rollback()
+                logger.warning("publish skipped for post %s: %s", post.id, getattr(e, "code", type(e).__name__))
+                result["skipped"] += 1
+                continue
+            if out.status in ("published", "sent_to_drafts"):
+                result["published"] += 1
+            elif out.status == "failed":
+                result["failed"] += 1
+        if mode == "dry_run":
+            result["dry_runs"] = dry_attempts() - before   # NEW "would publish" attempts only
 
     _heartbeat(db, result, now)
     return result

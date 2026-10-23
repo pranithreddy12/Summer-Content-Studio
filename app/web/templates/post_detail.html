@@ -151,6 +151,38 @@
     </div>
 
     <div class="post-side">
+      {% if settings.PUBLISHING_MODE in ('live', 'dry_run') and post.status in ('approved', 'scheduled', 'failed', 'publishing', 'sent_to_drafts', 'published') or attempts %}
+      <div class="sidebox" id="publish-panel">
+        <h3>Publishing</h3>
+        {% if post.status == 'sent_to_drafts' %}
+        <p>Sent to your TikTok drafts. Open TikTok, add the AI label and press Publish, then click <strong>Mark as posted</strong> below.</p>
+        {% elif post.status == 'published' %}
+        <p>Published{% if post.published_via %} ({{ post.published_via }}){% endif %}{% if post.external_url %} — <a href="{{ post.external_url }}" target="_blank" rel="noopener">open post</a>{% endif %}.</p>
+        {% elif post.status == 'publishing' %}
+        <p>Publishing in progress&hellip; refresh in a minute.</p>
+        {% elif post.status == 'failed' %}
+        <p class="small">{{ post.last_publish_error or 'Publishing failed.' }}</p>
+        <form method="post" action="/posts/{{ post.id }}/retry" class="inline-form"><button type="submit" class="btn btn-primary">Retry</button></form>
+        {% elif post.status in ('approved', 'scheduled') and settings.PUBLISHING_MODE in ('live', 'dry_run') %}
+          {% if preflight %}
+          <ul class="small">{% for r in preflight %}<li>{{ r }}</li>{% endfor %}</ul>
+          {% endif %}
+          <form method="post" action="/posts/{{ post.id }}/publish">
+            {% if settings.PUBLISHING_MODE == 'live' and post.platform == 'instagram' %}<p class="small">Instagram has no API flag for AI labels — add the label in the app after posting.</p>{% endif %}
+            <label class="small"><input type="checkbox" name="override_window" value="1"> Publish even outside 08:00–21:00</label>
+            <button type="submit" class="btn btn-primary" {% if preflight and settings.PUBLISHING_MODE == 'live' %}disabled{% endif %}
+              onclick="return confirm('{% if settings.PUBLISHING_MODE == 'live' %}Publish this now to {{ post.platform }}?{% else %}Record a dry run (nothing is sent)?{% endif %}')">
+              {% if settings.PUBLISHING_MODE == 'live' %}Publish now{% else %}Dry run now{% endif %}</button>
+          </form>
+        {% endif %}
+        {% if attempts %}
+        <table class="table small" style="margin-top:12px;"><thead><tr><th>#</th><th>How</th><th>Result</th></tr></thead><tbody>
+          {% for a in attempts %}<tr><td>{{ a.attempt_no }}</td><td>{{ a.trigger }}</td>
+            <td>{% if a.trigger == 'dry_run' %}{{ a.error_message }}{% elif a.success %}ok{% elif a.success is none %}running{% else %}{{ a.error_code }}: {{ a.error_message }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table>
+        {% endif %}
+      </div>
+      {% endif %}
       {% if post.status != 'archived' %}
       <div class="sidebox" id="manual-post-panel">
         <h3>Post it by hand</h3>

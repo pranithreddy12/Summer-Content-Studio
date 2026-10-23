@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Accounts — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Connections</span>
+      <h1>Accounts</h1>
+      <p class="page-lede">Connect Instagram and TikTok so the scheduler can publish. Tokens are encrypted and never shown. No passwords are ever entered here.</p>
+    </div>
+    <div class="page-actions">
+      <span class="mode-badge">{% if settings.PUBLISHING_MODE == 'off' %}Publishing off{% elif settings.PUBLISHING_MODE == 'reminders' %}Reminders{% elif settings.PUBLISHING_MODE == 'dry_run' %}Dry run{% else %}Live{% endif %} mode</span>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-head"><h2>Platform accounts</h2></div>
+    <div class="card-grid">
+      {% for c in cards %}
+      <div class="card" style="padding:16px;">
+        <h3 style="margin-top:0;">{{ c.platform|capitalize }} <span class="small">· {{ c.profile.name }}</span></h3>
+        {% if c.account and c.account.status != 'revoked' %}
+          <p><span class="badge badge-{{ 'approved' if c.account.status == 'connected' else 'failed' }}">{{ c.account.status }}</span>
+             <strong>@{{ c.account.username }}</strong></p>
+          {% if c.account.token_expires_at %}<p class="small">Access expires {{ c.account.token_expires_at.strftime('%Y-%m-%d') }} UTC</p>{% endif %}
+          {% if c.account.last_error %}<p class="small">{{ c.account.last_error }}</p>{% endif %}
+          <div class="form-actions">
+            {% if c.account.status != 'connected' and not c.missing %}<a class="btn btn-sm btn-primary" href="/oauth/{{ c.platform }}/start?profile_id={{ c.profile.id }}">Reconnect</a>{% endif %}
+            <form method="post" action="/accounts/{{ c.account.id }}/disconnect" class="inline-form">
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Disconnect and delete the stored tokens?')">Disconnect</button>
+            </form>
+          </div>
+        {% elif c.missing %}
+          <p class="small">Not connected. Still needed in <code>.env</code> before this can be connected:</p>
+          <p class="small"><code>{{ c.missing|join(', ') }}</code></p>
+        {% else %}
+          <p class="small">Not connected.</p>
+          <a class="btn btn-primary" href="/oauth/{{ c.platform }}/start?profile_id={{ c.profile.id }}">Connect {{ c.platform|capitalize }}</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>Push notifications</h2></div>
+    <div class="card" style="padding:16px;">
+      <p>Channel: <strong>{{ notify_provider }}</strong> — {% if notify_ready %}credentials set{% else %}not configured (see <code>.env.example</code>){% endif %}</p>
+      <form method="post" action="/accounts/notify-test" class="inline-form">
+        <button type="submit" class="btn" {% if not notify_ready %}disabled{% endif %}>Send test notification</button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}
