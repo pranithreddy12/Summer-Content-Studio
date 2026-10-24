@@ -22,7 +22,7 @@ from app.services.claude_client import GenerationError
 
 logger = logging.getLogger("app.services.engagement")
 
-SYNC_EVERY = timedelta(minutes=6)     # worker cadence
+SYNC_EVERY = timedelta(minutes=30)    # worker cadence: 2 calls per tracked post per run stays well under platform limits
 RECENT_DAYS = 14                      # posts younger than this are tracked
 MAX_DRAFT = 300                       # reply draft limit
 MAX_SEND = 1000                       # a human may write more than the draft limit, not unlimited

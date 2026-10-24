@@ -38,7 +38,7 @@ class NoHttp(httpx.Client):
         raise AssertionError(f"unexpected HTTP call: {request.url}")
 
 
-def stub_publisher(monkeypatch, fn=None, calls=None):
+def stub_publisher(monkeypatch, fn=None, calls=None, check=None):
     """Replace the platform module inside the publishing service."""
     def publish(http, token, uid, post, media_url, media_path, on_ref=None, caption=None):
         if calls is not None:
@@ -49,7 +49,7 @@ def stub_publisher(monkeypatch, fn=None, calls=None):
             on_ref("REF-1")
         from app.platforms import PublishResult
         return PublishResult("EXT-1", "https://www.instagram.com/p/abc/", NOON, "REF-1")
-    monkeypatch.setattr(pub, "publisher", lambda platform: SimpleNamespace(publish=publish))
+    monkeypatch.setattr(pub, "publisher", lambda platform: SimpleNamespace(publish=publish, check_status=check or (lambda *a: None)))
 
 
 def make_account(platform="instagram"):
@@ -394,7 +394,7 @@ def test_scheduler_live_publishes_due_posts_only(live, monkeypatch):
     assert (r["due"], r["published"], r["failed"]) == (1, 1, 0)
     assert post_of(due).status == "published"
     assert post_of(future).status == "scheduled" and post_of(retry_later).status == "scheduled"
-    r2 = run(NOON + timedelta(minutes=31), NoHttp())
+    r2 = run(NOON + timedelta(hours=3, minutes=31), NoHttp())      # backlog spacing: one post per min_gap
     assert post_of(retry_later).status == "published" and r2["published"] == 1
 
 

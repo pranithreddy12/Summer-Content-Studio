@@ -14,7 +14,7 @@ router = APIRouter(prefix="/content", tags=["content"])
 
 
 @router.post("/generate", response_model=PostOut, status_code=status.HTTP_201_CREATED)
-async def generate_content(
+def generate_content(
     request: Request,
     req: GenerateRequest,
     db: Session = Depends(get_db),
@@ -63,7 +63,7 @@ async def generate_content(
 
 
 @router.post("/{post_id}/regenerate", response_model=VariantOut, status_code=status.HTTP_201_CREATED)
-async def regenerate_content(
+def regenerate_content(
     post_id: int,
     req: RegenerateRequest,
     request: Request,

@@ -82,7 +82,7 @@ async def upload_asset_endpoint(
 
 
 @router.post("/sync")
-async def sync_assets_endpoint(db: Session = Depends(get_db)):
+def sync_assets_endpoint(db: Session = Depends(get_db)):
     """Register new files from MEDIA_SYNC_DIR (read-only)."""
     return assets_service.sync_media_dir(db)
 

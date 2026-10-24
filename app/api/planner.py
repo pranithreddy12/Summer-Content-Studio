@@ -11,13 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db, utcnow
 from app.models import PostingRule, ContentPost, ModelProfile, PostStatus
+from app.schemas import Id, NonNullUpdate
 from app.services import AppError
 from app.services.planner import plan_week, validate_rule_values
 
 router = APIRouter(prefix="/planner", tags=["planner"])
 
 
-class RuleUpdate(BaseModel):
+class RuleUpdate(NonNullUpdate):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     posts_per_week: Optional[int] = None
@@ -49,7 +50,7 @@ class RuleOut(BaseModel):
 
 
 class PlanRequest(BaseModel):
-    profile_id: int
+    profile_id: Id
     platform: str
     start_day: Optional[str] = None  # ISO date, default: tomorrow (rule tz)
 

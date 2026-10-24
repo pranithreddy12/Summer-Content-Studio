@@ -1,6 +1,7 @@
 """Assets service - register, upload, sync, filter, archive, file resolution."""
 
 import hashlib
+import logging
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -17,6 +18,8 @@ from app.security import (
     safe_relpath, validate_file_extension, validate_magic_bytes,
     compute_sha256, get_or_create_tags,
 )
+
+logger = logging.getLogger("app.services.assets")
 
 # =========================================================================
 # File validation constants
@@ -201,6 +204,9 @@ async def upload_asset(
     except Exception as e:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(e))
+    except BaseException:  # client disconnect cancels the task: do not leave a 500 MB temp file behind
+        tmp_path.unlink(missing_ok=True)
+        raise
 
     # Sanitize original filename
     safe_filename = Path(file.filename).name[:255]
@@ -372,7 +378,7 @@ def list_assets(
     if tags:
         # Asset must have ALL given tags
         for tag_slug in tags:
-            query = query.join(MediaAsset.tags).where(Tag.slug == tag_slug)
+            query = query.where(MediaAsset.tags.any(Tag.slug == tag_slug))
 
     if media_type:
         query = query.where(MediaAsset.media_type == media_type)

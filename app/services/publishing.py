@@ -92,8 +92,8 @@ def preflight_reasons(db: Session, post: ContentPost, now: Optional[datetime] = 
             reasons.append("media_not_publishable: external-url media cannot be served to the platform")
     if publishing_mode() == "live" and connected_account(db, post.model_profile_id, post.platform) is None:
         reasons.append("account_not_connected: connect the account on the Accounts page")
-    if post.caption and len(post.caption) > MAX_CAPTION_LENGTH:
-        reasons.append(f"caption_too_long: {len(post.caption)} > {MAX_CAPTION_LENGTH} chars")
+    if post.caption and len(render_caption(post)) > MAX_CAPTION_LENGTH:
+        reasons.append(f"caption_too_long: caption + hashtags are {len(render_caption(post))} chars, max {MAX_CAPTION_LENGTH}")
     if now is not None and not in_window(get_rule(db, post.model_profile_id, post.platform), now):
         reasons.append("outside_posting_window: inside 08:00-21:00 only")
     return reasons
@@ -118,8 +118,8 @@ def check_publishable(
     ok, code = asset_is_publishable(post)
     if not ok:
         raise AppError(code, "Media is not publishable.", status=409)
-    if len(post.caption or "") > MAX_CAPTION_LENGTH:
-        raise AppError("caption_too_long", "Caption exceeds the platform limit.", status=422)
+    if len(render_caption(post)) > MAX_CAPTION_LENGTH:  # what is actually sent: caption + hashtags
+        raise AppError("caption_too_long", "Caption plus hashtags exceed the platform limit.", status=422)
     if publishing_mode() == "live" and connected_account(db, post.model_profile_id, post.platform) is None:
         raise AppError("account_not_connected", "No connected platform account.", status=409)
     if override_window:
@@ -245,6 +245,13 @@ def _publish_live(db: Session, post: ContentPost, trigger: str, now: datetime, h
     try:
         token = accounts.get_valid_token(db, account, http, now)
         secrets_.append(token)
+        # A previous attempt may have succeeded at the platform with the answer lost (timeout):
+        # never create a second public post before asking the platform about it.
+        earlier = [a for a in list_attempts(db, post.id) if a.id != attempt.id and a.trigger != "dry_run" and a.platform_ref]
+        if earlier:
+            found = publisher(post.platform).check_status(http, token, account.external_user_id, earlier[-1].platform_ref)
+            if found is not None:
+                return _apply_success(db, post, attempt, found, now)
         try:
             path = resolve_asset_file(post.asset)
         except Exception as e:

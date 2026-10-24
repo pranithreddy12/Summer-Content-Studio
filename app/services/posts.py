@@ -429,7 +429,8 @@ def apply_variant(db: Session, post_id: int, variant_id: int) -> ContentPost:
     if not variant or variant.post_id != post_id:
         raise AppError("not_found", "Variant not found", status=404)
 
-    if post.status in (PostStatus.archived.value, PostStatus.published.value):
+    if post.status in (PostStatus.archived.value, PostStatus.published.value, PostStatus.publishing.value,
+                       PostStatus.sent_to_drafts.value):
         raise AppError("invalid_transition", f"Cannot apply variant to post with status '{post.status}'.", status=409)
 
     # Copy variant fields to post
@@ -440,7 +441,7 @@ def apply_variant(db: Session, post_id: int, variant_id: int) -> ContentPost:
     post.content_notes = variant.content_notes
 
     # Content change resets approval
-    if post.status in (PostStatus.approved.value, PostStatus.scheduled.value):
+    if post.status in (PostStatus.approved.value, PostStatus.scheduled.value, PostStatus.failed.value):
         post.status = PostStatus.draft.value
         post.approved_at = None
 

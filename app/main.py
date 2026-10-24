@@ -52,20 +52,22 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
 
-    problems = settings.production_problems() if settings.APP_ENV == "production" else []
+    # Live publishing means real accounts: it is treated as production even if APP_ENV was forgotten.
+    locked_down = settings.APP_ENV == "production" or settings.PUBLISHING_MODE == "live"
+    problems = settings.production_problems() if locked_down else []
     if problems:  # PLAN_PHASE2 §15: Phase 2 makes the app public-facing; never start it open
-        raise RuntimeError("Refusing to start with APP_ENV=production: " + "; ".join(problems) + ".")
+        raise RuntimeError("Refusing to start with APP_ENV=production or PUBLISHING_MODE=live: " + "; ".join(problems) + ".")
 
     # Configure docs URLs based on environment
-    docs_url = "/docs" if settings.APP_ENV == "development" else None
-    redoc_url = "/redoc" if settings.APP_ENV == "development" else None
+    docs_url = "/docs" if not locked_down else None
+    redoc_url = "/redoc" if not locked_down else None
 
     app = FastAPI(
         title="Summer AI Content Automation",
         version="0.2.0",
         lifespan=lifespan,
         docs_url=docs_url,
-        openapi_url="/openapi.json" if settings.APP_ENV == "development" else None,
+        openapi_url="/openapi.json" if not locked_down else None,
         redoc_url=redoc_url,
     )
 
@@ -173,20 +175,20 @@ def create_app() -> FastAPI:
                     headers={"WWW-Authenticate": "Basic"},
                 )
 
-        # CSRF mitigation: dashboard (non-/api) unsafe methods must be same-origin
+        # CSRF mitigation: every unsafe request (dashboard AND /api) that carries an Origin/Referer
+        # must be same-origin; "Origin: null" (sandboxed iframes, data: pages) is cross-origin.
+        # Requests with neither header (curl, scripts, tests) are not browser form posts and pass.
         unsafe = request.method not in ("GET", "HEAD", "OPTIONS", "TRACE")
-        if not request.url.path.startswith("/api") and unsafe:
+        if unsafe:
             from urllib.parse import urlparse
 
             host = request.headers.get("host")
             origin = request.headers.get("origin") or request.headers.get("referer")
-            if host and origin:
-                origin_host = urlparse(origin).netloc
-                if origin_host and origin_host != host:
-                    return JSONResponse(
-                        status_code=403,
-                        content={"error": {"code": "forbidden", "message": "Cross-origin request rejected"}},
-                    )
+            if host and origin and (origin.strip() == "null" or urlparse(origin).netloc != host):
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": {"code": "forbidden", "message": "Cross-origin request rejected"}},
+                )
 
         return await call_next(request)
 
@@ -196,6 +198,9 @@ def create_app() -> FastAPI:
         start_time = time.time()
         response = await call_next(request)
         duration_ms = int((time.time() - start_time) * 1000)
+        response.headers.setdefault("X-Frame-Options", "DENY")          # no clickjacking of Approve / Publish
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
 
         logger.info(
             "Request completed",

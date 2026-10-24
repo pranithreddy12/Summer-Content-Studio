@@ -27,7 +27,7 @@ from app.models import ContentPost, PostStatus, PostingRule, WorkerHeartbeat
 
 logger = logging.getLogger("app.services.scheduler")
 
-REFRESH_WINDOW = {"instagram": timedelta(days=7), "tiktok": timedelta(hours=24)}
+REFRESH_WINDOW = {"instagram": timedelta(days=7), "tiktok": timedelta(hours=2)}  # TikTok access tokens live 24 h
 REFRESH_RETRY = timedelta(minutes=30)
 _refresh_tried: dict[int, datetime] = {}  # ponytail: in-memory (one worker process); a restart simply retries once
 
@@ -107,6 +107,27 @@ def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
     return [p for p in rows if in_window(get_rule(db, p.model_profile_id, p.platform), now)]
 
 
+def _too_soon(db, post: ContentPost, now: datetime, seen: set, col, statuses=None) -> bool:
+    """Backlog guard: after downtime, release overdue posts one per (profile, platform) per
+    rule.min_gap_minutes instead of all at once. `col` = the timestamp that marks "already sent"."""
+    from app.services.publishing import get_rule
+
+    key = (post.model_profile_id, post.platform)
+    if key in seen:
+        return True
+    seen.add(key)
+    rule = get_rule(db, post.model_profile_id, post.platform)
+    gap = timedelta(minutes=getattr(rule, "min_gap_minutes", 180))  # no rule: the 180-min default
+    if not gap:
+        return False
+    q = select(ContentPost.id).where(
+        ContentPost.model_profile_id == post.model_profile_id, ContentPost.platform == post.platform,
+        ContentPost.id != post.id, col > now - gap, col <= now)
+    if statuses:
+        q = q.where(ContentPost.status.in_(statuses))
+    return db.execute(q.limit(1)).first() is not None
+
+
 # ---- stages ----------------------------------------------------------------
 
 def recover_stuck(db, now: datetime, http) -> dict:
@@ -131,7 +152,8 @@ def reminders(db, now: datetime, http, result: dict) -> None:
     from app.services.notifications import notify
     from app.services.publishing import render_caption
 
-    posts = due_reminder_posts(db, now)
+    seen: set = set()
+    posts = [p for p in due_reminder_posts(db, now) if not _too_soon(db, p, now, seen, ContentPost.reminded_at)]
     result["due"] = len(posts)
     if posts and not get_settings().notify_configured:
         result["note"] = "reminders mode but NOTIFY_PROVIDER has no credentials - nothing sent"
@@ -151,7 +173,7 @@ def reminders(db, now: datetime, http, result: dict) -> None:
     db.commit()
 
 
-def publish_due(db, now: datetime, http, mode: str, result: dict) -> None:
+def publish_due(db, now: datetime, http, mode: str, result: dict, beat=None) -> None:
     """Due, inside the window, retry time reached -> publish (live) or record a dry run."""
     from sqlalchemy import func
 
@@ -164,7 +186,12 @@ def publish_due(db, now: datetime, http, mode: str, result: dict) -> None:
     before = dry_attempts()
     posts = due_publish_posts(db, now)
     result["due"] = len(posts)
+    seen: set = set()
     for post in posts:
+        if mode == "live" and _too_soon(
+                db, post, now, seen, func.coalesce(ContentPost.published_at, ContentPost.updated_at),
+                ("published", "sent_to_drafts")):
+            continue  # backlog: next one goes out min_gap_minutes after the last
         try:
             out = publish_post(db, post.id, trigger="retry" if post.next_attempt_at else "schedule", now=now, http=http)
         except Exception as e:  # pre-flight problem: the post is untouched
@@ -181,12 +208,14 @@ def publish_due(db, now: datetime, http, mode: str, result: dict) -> None:
             result["published"] += 1
         elif out.status == "failed":
             result["failed"] += 1
+        if beat:
+            beat()  # a publish can take minutes: keep the heartbeat fresh between posts
     if mode == "dry_run":
         result["dry_runs"] = dry_attempts() - before  # NEW "would publish" attempts only
 
 
 def refresh_due_tokens(db, now: datetime, http) -> dict:
-    """Refresh tokens close to expiry (Instagram: within 7 days, TikTok: within 24 h). A rejected
+    """Refresh tokens close to expiry (Instagram: within 7 days, TikTok: within 2 h). A rejected
     refresh marks the account `expired` (+ push) inside accounts.refresh_account; transient failures
     are retried at most every 30 minutes."""
     from app.platforms import PlatformError
@@ -251,6 +280,9 @@ def planner_tick(db, now: datetime, state: dict) -> dict:
 
 def run_once(db, now, http=None) -> dict:
     """One worker iteration. Returns counters (used by tests and the heartbeat)."""
+    import time
+
+    t0 = time.monotonic()
     settings = get_settings()
     mode = publishing_mode()
     result = {"mode": mode, "due": 0, "reminded": 0, "published": 0, "failed": 0, "skipped": 0}
@@ -265,6 +297,9 @@ def run_once(db, now, http=None) -> dict:
 
         http = http_client(settings)
 
+    def beat() -> None:
+        _heartbeat(db, dict(result), now + timedelta(seconds=time.monotonic() - t0))
+
     def stage(name: str, fn) -> None:
         try:
             fn()
@@ -278,7 +313,7 @@ def run_once(db, now, http=None) -> dict:
     if mode == "reminders":
         stage("reminders", lambda: reminders(db, now, http, result))
     else:
-        stage("publish", lambda: publish_due(db, now, http, mode, result))
+        stage("publish", lambda: publish_due(db, now, http, mode, result, beat))
     if mode == "live":
         stage("refresh_tokens", lambda: result.__setitem__("tokens", refresh_due_tokens(db, now, http)))
     if mode == "live":
@@ -291,7 +326,7 @@ def run_once(db, now, http=None) -> dict:
             result["planner_ran"] = state
         stage("planner", tick)
 
-    _heartbeat(db, result, now)
+    beat()  # stamped at the END of the iteration (a publish blocks for minutes)
     return result
 
 

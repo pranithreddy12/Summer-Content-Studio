@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -20,12 +20,36 @@ from app.models import (
 # Base configurations
 # =========================================================================
 
+# Database ids: positive and inside SQLite's integer range (0 / negative / 2**70 would be an FK error or overflow = 500)
+Id = Annotated[int, Field(ge=1, le=2_147_483_647)]
+
+
 class BaseSchema(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
         str_strip_whitespace=True,
         extra="forbid",
     )
+
+    @field_validator("idempotency_key", "batch_key", check_fields=False)
+    @classmethod
+    def _blank_key_is_no_key(cls, v: Optional[str]) -> Optional[str]:
+        return v or None   # "" would collide on the unique index after the first use
+
+
+class NonNullUpdate(BaseModel):
+    """Update schemas: an explicit null is only accepted for fields listed in `nullable`
+    (everything else maps to a NOT NULL column and would end in a 500)."""
+    nullable: ClassVar[frozenset] = frozenset()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            bad = sorted(k for k, v in data.items() if v is None and k not in cls.nullable)
+            if bad:
+                raise ValueError(f"{', '.join(bad)} cannot be null")
+        return data
 
 
 # =========================================================================
@@ -57,7 +81,7 @@ class ProfileOut(BaseSchema):
         return v
 
 
-class ProfileUpdate(BaseSchema):
+class ProfileUpdate(NonNullUpdate, BaseSchema):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     persona_description: Optional[str] = None
     tone_style: Optional[str] = None
@@ -72,6 +96,8 @@ class ProfileUpdate(BaseSchema):
     def validate_list_items(cls, v: Optional[List[str]]) -> Optional[List[str]]:
         if v is None:
             return None
+        if not isinstance(v, list):
+            raise ValueError("must be a list of strings")
         for item in v:
             if not isinstance(item, str) or not (1 <= len(item) <= 300):
                 raise ValueError("Each item must be 1-300 characters")
@@ -102,7 +128,7 @@ class AssetCreate(BaseSchema):
     local_relpath: Optional[str] = None
     description: str = Field("", max_length=2000)
     tags: List[str] = Field(default_factory=list, max_length=20)
-    model_profile_id: Optional[int] = None
+    model_profile_id: Optional[Id] = None
 
     @model_validator(mode="after")
     def validate_storage_fields(self) -> "AssetCreate":
@@ -119,11 +145,13 @@ class AssetCreate(BaseSchema):
         return self
 
 
-class AssetUpdate(BaseSchema):
+class AssetUpdate(NonNullUpdate, BaseSchema):
+    nullable: ClassVar[frozenset] = frozenset({"model_profile_id"})
+
     filename: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = Field(None, max_length=20)
-    model_profile_id: Optional[int] = None
+    model_profile_id: Optional[Id] = None
     is_active: Optional[bool] = None
 
 
@@ -153,11 +181,11 @@ class AssetOut(BaseSchema):
 # =========================================================================
 
 class GenerateRequest(BaseSchema):
-    profile_id: int
+    profile_id: Id
     platform: Platform
     content_type: ContentType
     campaign: str = Field(..., min_length=1, max_length=60)
-    asset_id: Optional[int] = None
+    asset_id: Optional[Id] = None
     asset_context: str = Field("", max_length=1000)
     seasonal_context: str = Field("", max_length=500)
     tone_variation: str = Field("", max_length=200)
@@ -196,11 +224,11 @@ class GeneratedContent(BaseSchema):
 # =========================================================================
 
 class PostCreate(BaseSchema):
-    profile_id: int
+    profile_id: Id
     platform: Platform
     content_type: ContentType
     campaign: str = Field(..., min_length=1, max_length=60)
-    asset_id: Optional[int] = None
+    asset_id: Optional[Id] = None
     hook: str = Field("", max_length=500)
     caption: str = Field(..., min_length=1, max_length=2200)
     hashtags: List[str] = Field(default_factory=list, max_length=30)
@@ -227,7 +255,9 @@ class PostCreate(BaseSchema):
         return self
 
 
-class PostUpdate(BaseSchema):
+class PostUpdate(NonNullUpdate, BaseSchema):
+    nullable: ClassVar[frozenset] = frozenset({"asset_id", "planned_publish_at"})
+
     hook: Optional[str] = Field(None, max_length=500)
     caption: Optional[str] = Field(None, min_length=1, max_length=2200)
     hashtags: Optional[List[str]] = Field(None, max_length=30)
@@ -235,7 +265,7 @@ class PostUpdate(BaseSchema):
     content_notes: Optional[str] = Field(None, max_length=2000)
     campaign: Optional[str] = Field(None, min_length=1, max_length=60)
     tags: Optional[List[str]] = Field(None, max_length=20)
-    asset_id: Optional[int] = None
+    asset_id: Optional[Id] = None
     planned_publish_at: Optional[Union[datetime, None]] = None  # explicit null = clear
 
     @field_validator("planned_publish_at", mode="before")
@@ -412,7 +442,7 @@ class RandomDraftRequest(BaseSchema):
     media_type: Optional[MediaType] = None
     tag: Optional[str] = Field(None, max_length=60)
     include_used: bool = False
-    profile_id: Optional[int] = None
+    profile_id: Optional[Id] = None
     seasonal_context: str = Field("", max_length=500)
     batch_key: Optional[str] = Field(None, max_length=40)  # makes a resubmitted batch idempotent
     both_platforms: bool = False  # videos -> Instagram + TikTok pair sharing group_key

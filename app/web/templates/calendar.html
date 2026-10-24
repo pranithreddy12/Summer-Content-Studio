@@ -24,7 +24,7 @@
       <a class="cal-slot slot-{{ post.status }}{% if post.planned_by == 'planner' %} slot-planner{% endif %}{% if not post.in_window %} slot-out-of-window{% endif %}"
          href="/posts/{{ post.id }}"
          title="{{ post.status }} · {{ post.platform }}{% if not post.in_window %} · outside the posting window{% endif %}">
-        {{ post.planned_publish_at.strftime('%H:%M') }} {{ post.platform[:2] }}
+        {{ (post.planned_publish_at | local).strftime('%H:%M') }} {{ post.platform[:2] }}
       </a>
       {% endfor %}
     </div>

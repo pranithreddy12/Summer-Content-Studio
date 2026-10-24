@@ -441,10 +441,10 @@ def test_worker_syncs_engagement_every_few_minutes_in_live_mode_only(live):
     r1 = sch.run_once(db(), LATER, http=http)
     assert r1["engagement"]["new_comments"] == 1 and r1["engagement_at"] == LATER.isoformat()
     n = len(ig.calls)
-    r2 = sch.run_once(db(), LATER + timedelta(minutes=3), http=http)             # too soon: no calls, state carried forward
+    r2 = sch.run_once(db(), LATER + timedelta(minutes=12), http=http)             # too soon: no calls, state carried forward
     assert "engagement" not in r2 and len(ig.calls) == n
     assert db().query(sch.WorkerHeartbeat).one().last_result["engagement_at"] == LATER.isoformat()
-    r3 = sch.run_once(db(), LATER + timedelta(minutes=7), http=http)
+    r3 = sch.run_once(db(), LATER + timedelta(minutes=31), http=http)
     assert "engagement" in r3 and len(ig.calls) > n
 
 

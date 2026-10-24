@@ -31,6 +31,19 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
 
 
+def local_time(value, tz_name: Optional[str] = None):
+    """UTC datetime (naive = UTC) -> aware datetime in the display zone (APP_TIMEZONE or `tz_name`)."""
+    from zoneinfo import ZoneInfo
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(ZoneInfo(tz_name or get_settings().APP_TIMEZONE))
+
+
+templates.env.filters["local"] = local_time
+
+
 def _template_response(template_name: str, context: dict, status_code: int = 200):
     """New-style TemplateResponse wrapper (starlette >= 1.0 signature)."""
     request = context.get("request")
@@ -56,7 +69,9 @@ def get_flash(request: Request) -> Optional[dict]:
 def redirect_with_flash(url: str, message: str, kind: str = "ok") -> RedirectResponse:
     """Create redirect with flash message in query params."""
     from urllib.parse import quote
-    return RedirectResponse(f"{url}?msg={quote(message)}&kind={kind}", status_code=status.HTTP_303_SEE_OTHER)
+    if isinstance(message, dict):  # HTTPException(detail={"code", "message"})
+        message = str(message.get("message") or message.get("code") or "Request failed")
+    return RedirectResponse(f"{url}?msg={quote(str(message))}&kind={kind}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 def get_settings_dep():
@@ -280,7 +295,7 @@ async def asset_create(
     return redirect_with_flash("/assets/new", "Unknown form type", "error")
 
 
-@router.get("/assets/{asset_id}", response_class=HTMLResponse)
+@router.get("/assets/{asset_id:int}", response_class=HTMLResponse)
 async def asset_detail(
     request: Request,
     asset_id: int,
@@ -314,7 +329,7 @@ async def asset_detail(
     })
 
 
-@router.post("/assets/{asset_id}")
+@router.post("/assets/{asset_id:int}")
 async def asset_update(
     request: Request,
     asset_id: int,
@@ -377,7 +392,7 @@ def asset_delete(
 
 
 @router.post("/assets/sync")
-async def assets_sync(
+def assets_sync(
     db: Session = Depends(get_db),
 ):
     """Sync media from MEDIA_SYNC_DIR."""
@@ -437,7 +452,7 @@ async def generate_form(
 
 
 @router.post("/generate")
-async def generate_content(
+def generate_content(
     request: Request,
     profile_id: int = Form(...),
     platform: str = Form(...),
@@ -469,19 +484,22 @@ async def generate_content(
     if not idempotency_key:
         idempotency_key = uuid.uuid4().hex
 
-    req = GenerateRequest(
-        profile_id=profile_id,
-        platform=platform,
-        content_type=content_type,
-        campaign=campaign,
-        asset_id=asset_id,
-        asset_context=asset_context,
-        seasonal_context=seasonal_context,
-        tone_variation=tone_variation,
-        cta_request=cta_request,
-        extra_restrictions=extra_restrictions_list,
-        idempotency_key=idempotency_key,
-    )
+    try:
+        req = GenerateRequest(
+            profile_id=profile_id,
+            platform=platform,
+            content_type=content_type,
+            campaign=campaign,
+            asset_id=asset_id,
+            asset_context=asset_context,
+            seasonal_context=seasonal_context,
+            tone_variation=tone_variation,
+            cta_request=cta_request,
+            extra_restrictions=extra_restrictions_list,
+            idempotency_key=idempotency_key,
+        )
+    except ValueError as e:  # pydantic ValidationError: e.g. a platform / content-type mismatch
+        return redirect_with_flash("/generate", "; ".join(str(x["msg"]) for x in e.errors()) if hasattr(e, "errors") else str(e), "error")
 
     try:
         post = generate_draft(db, req, client)
@@ -665,40 +683,47 @@ async def post_update(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    # Parse hashtags
     hashtag_list = [h.strip().lstrip("#") for h in hashtags.replace(",", " ").split() if h.strip()]
-
-    # Parse tags
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # Parse planned_publish_at
-    planned_dt = None
-    if planned_publish_at:
-        try:
-            # datetime-local format: YYYY-MM-DDTHH:MM
-            planned_dt = datetime.fromisoformat(planned_publish_at)
-            # Assume local timezone, convert to UTC
-            from zoneinfo import ZoneInfo
-            tz = ZoneInfo(get_settings().APP_TIMEZONE)
-            planned_dt = planned_dt.replace(tzinfo=tz).astimezone(timezone.utc)
-        except ValueError:
-            pass
+    # The form posts every field; send only what the user changed, so a plain Save never
+    # un-approves a post and an untouched time is never re-interpreted.
+    changes: dict = {}
+    if hook != (post.hook or ""):
+        changes["hook"] = hook
+    if caption != (post.caption or ""):
+        changes["caption"] = caption
+    if hashtag_list != list(post.hashtags or []):
+        changes["hashtags"] = hashtag_list
+    if call_to_action != (post.call_to_action or ""):
+        changes["call_to_action"] = call_to_action
+    if content_notes != (post.content_notes or ""):
+        changes["content_notes"] = content_notes
+    if campaign and campaign != (post.campaign or ""):
+        changes["campaign"] = campaign
+    if sorted(tag_list) != sorted(t.name for t in post.tags if not t.is_category):
+        changes["tags"] = tag_list
+    if asset_id != post.media_asset_id:
+        changes["asset_id"] = asset_id
 
-    req = PostUpdate(
-        hook=hook,
-        caption=caption,
-        hashtags=hashtag_list,
-        call_to_action=call_to_action,
-        content_notes=content_notes,
-        campaign=campaign,
-        tags=tag_list,
-        asset_id=asset_id,
-        planned_publish_at=planned_dt,
-    )
+    current_local = local_time(post.planned_publish_at)
+    current_text = current_local.strftime("%Y-%m-%dT%H:%M") if current_local else ""
+    submitted = (planned_publish_at or "").strip()
+    if submitted != current_text:
+        if not submitted:
+            changes["planned_publish_at"] = None
+        else:
+            try:
+                from zoneinfo import ZoneInfo
+                naive = datetime.fromisoformat(submitted)
+                changes["planned_publish_at"] = naive.replace(tzinfo=ZoneInfo(get_settings().APP_TIMEZONE)).astimezone(timezone.utc)
+            except ValueError:
+                return redirect_with_flash(f"/posts/{post_id}", "Planned publish time is not a valid date/time.", "error")
 
     try:
-        update_post(db, post_id, req)
-        return redirect_with_flash(f"/posts/{post_id}", "Post updated successfully")
+        if changes:
+            update_post(db, post_id, PostUpdate(**changes))
+        return redirect_with_flash(f"/posts/{post_id}", "Post updated successfully" if changes else "No changes to save")
     except HTTPException as e:
         return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
     except Exception as e:
@@ -791,7 +816,7 @@ async def post_restore(
 
 
 @router.post("/posts/{post_id}/regenerate")
-async def post_regenerate(
+def post_regenerate(
     request: Request,
     post_id: int,
     tone_variation: str = Form(""),
@@ -1081,8 +1106,8 @@ async def profile_update(
         profile.name = name
         profile.persona_description = persona_description
         profile.tone_style = tone_style
-        profile.communication_rules = json.dumps([r.strip() for r in communication_rules.split("\n") if r.strip()])
-        profile.restricted_topics = json.dumps([r.strip() for r in restricted_topics.split("\n") if r.strip()])
+        profile.communication_rules = [r.strip() for r in communication_rules.splitlines() if r.strip()]
+        profile.restricted_topics = [r.strip() for r in restricted_topics.splitlines() if r.strip()]
         profile.style_notes = style_notes
         profile.cta_guidelines = cta_guidelines
         profile.is_active = is_active

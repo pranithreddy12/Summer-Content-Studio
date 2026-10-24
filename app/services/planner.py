@@ -112,17 +112,15 @@ def _day_counts(rule, rng: random.Random) -> list[int]:
 
 def _pick_minutes(count: int, span: int, gap: int, rng: random.Random) -> list[int]:
     """`count` distinct minutes in [0, span] (inclusive), every gap >= `gap`.
-    Up to 50 random attempts, then evenly spaced fallback."""
+    Random picks from the slack left after reserving (count-1)*gap, then spread by i*gap:
+    always valid (validate_rule_values guarantees span >= (max_per_day-1)*gap)."""
     if count <= 0:
         return []
-    if count == 1:
-        return [rng.randrange(span + 1)]
-    for _attempt in range(50):
-        picks = sorted(rng.choice(range(span + 1)) for _ in range(count))
-        if len(set(picks)) == count and all((b - a) >= gap for a, b in zip(picks, picks[1:])):
-            return picks
-    step = span / count
-    return [min(span, round(step * (i + 0.5))) for i in range(count)]
+    step = max(gap, 1)
+    slack = span - (count - 1) * step
+    if slack < 0:  # cannot happen for a validated rule; stay evenly spaced rather than crash
+        return [min(span, round(span / count * (i + 0.5))) for i in range(count)]
+    return [p + i * step for i, p in enumerate(sorted(rng.randrange(slack + 1) for _ in range(count)))]
 
 
 def make_slots(rule, start_day: date, now: datetime, rng: random.Random,
@@ -277,6 +275,11 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
             ContentPost.planned_publish_at.is_(None),
         ).order_by(ContentPost.created_at.asc())
     ).scalars().all()
+    # When the app publishes by itself, a post that pre-flight will always refuse (wrong media
+    # type, no media, ...) would only fail at its slot: leave it approved and unplanned.
+    from app.services.publishing import asset_is_publishable, publishing_mode
+    if publishing_mode() in ("live", "dry_run"):
+        candidates = [p for p in candidates if asset_is_publishable(p)[0]]
 
     # Mirrored groups first (oldest group first), then singletons (oldest first):
     # both platforms walk their groups in the same order over the same day

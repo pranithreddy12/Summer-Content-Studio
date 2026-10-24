@@ -19,7 +19,7 @@ API = "https://open.tiktokapis.com"
 SCOPES = ["user.info.basic", "video.upload"]
 MB = 1024 * 1024
 MIN_CHUNK, CHUNK, MAX_CHUNK, MAX_FINAL_CHUNK = 5 * MB, 10 * MB, 64 * MB, 128 * MB
-POLL_SECONDS, POLL_MAX = 3, 20
+POLL_SECONDS, POLL_MAX = 3, 60
 _sleep = time.sleep  # tests replace this
 
 DONE = ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE")

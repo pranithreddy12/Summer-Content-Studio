@@ -73,7 +73,7 @@
           <td>{{ post.campaign }}</td>
           <td><span class="badge badge-{{ post.status }}">{{ post.status }}</span></td>
           <td>{{ post.created_at.strftime('%m-%d %H:%M') }}</td>
-          <td>{% if post.planned_publish_at %}<span class="mono">{{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if post.planned_publish_at %}<span class="mono">{{ (post.planned_publish_at | local).strftime('%Y-%m-%d %H:%M') }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="truncate">{{ post.caption[:100] }}{% if post.caption|length > 100 %}…{% endif %}</td>
           <td>
             <div class="actions">

@@ -126,9 +126,10 @@ def check_rate_limit(
     request: Request,
     limit: int,
     window_seconds: int = 60,
+    bucket: str = "generation",
 ) -> None:
     """Check rate limit for client IP (in-memory sliding window)."""
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = f"{bucket}:{request.client.host if request.client else 'unknown'}"
     now = time.time()
     window_start = now - window_seconds
 
@@ -159,7 +160,7 @@ def _check_upload_rate_limit(request: Request) -> None:
     """Rate limit for file upload endpoints (separate bucket from generation)."""
     settings = get_settings()
     upload_limit = getattr(settings, "UPLOAD_RATE_LIMIT_PER_MINUTE", 20)
-    check_rate_limit(request, upload_limit)
+    check_rate_limit(request, upload_limit, bucket="upload")
 
 
 # =========================================================================

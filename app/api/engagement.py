@@ -40,7 +40,14 @@ def list_comments(platform: Optional[str] = None, post_id: Optional[int] = None,
 def draft_reply(comment_id: int, request: Request, req: DraftReplyRequest | None = None,
                 db: Session = Depends(get_db), client=Depends(get_claude_client)):
     generation_rate_limit(request)
-    comment, suggest_ignore = svc.draft_reply(db, comment_id, client, req.instructions if req else "")
+    from fastapi import HTTPException
+
+    from app.services.claude_client import GenerationError
+
+    try:
+        comment, suggest_ignore = svc.draft_reply(db, comment_id, client, req.instructions if req else "")
+    except GenerationError as e:  # provider problem: same shape as /content/generate
+        raise HTTPException(status_code=e.http_status, detail={"code": e.category, "message": e.message})
     return DraftReplyOut(comment=CommentOut.model_validate(comment), suggest_ignore=suggest_ignore)
 
 

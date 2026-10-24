@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import click
+from sqlalchemy import inspect as sa_inspect
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 
@@ -37,8 +38,12 @@ def init_db() -> None:
     alembic_cfg = AlembicConfig("alembic.ini")
     try:
         alembic_command.upgrade(alembic_cfg, "head")
-    except Exception:
+    except Exception as e:
         engine = get_engine()
+        if "alembic_version" in sa_inspect(engine).get_table_names():
+            # A tracked database whose upgrade failed: stamping it "current" would hide missing columns forever.
+            click.echo(f"Migration failed, database left as it was: {e}", err=True)
+            sys.exit(1)
         Base.metadata.create_all(engine)
         alembic_command.stamp(alembic_cfg, "head")
 
