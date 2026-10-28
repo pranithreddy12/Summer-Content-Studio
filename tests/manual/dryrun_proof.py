@@ -1,4 +1,4 @@
-"""Manual proof (not collected by pytest). Run from the repo root:  .venv\Scripts\python tests\manual\dryrun_proof.py
+r"""Manual proof (not collected by pytest). Run from the repo root:  .venv\Scripts\python tests\manual\dryrun_proof.py
 
 Scratch proof for B5 'done when': dry_run worker on a scratch DB -> 'would publish' attempts, zero HTTP."""
 import os
@@ -37,6 +37,10 @@ for i in range(3):
               "caption": f"Scratch reel {i}", "hashtags": ["halloween"], "asset_id": a["id"]}).json()
     c.post(f"/api/v1/posts/{p['id']}/approve")
 db = get_session_factory()()
+if not db.query(PostingRule).count():   # no rules seeded: the hard 08:00-21:00 default would make this run depend on the wall clock
+    db.add(PostingRule(model_profile_id=1, platform="instagram", posts_per_week=7, min_per_day=1, max_per_day=1, window_start="08:00",
+                       window_end="21:00", min_gap_minutes=0, timezone="UTC", is_active=True))
+    db.flush()
 for r in db.query(PostingRule).all():
     r.enforce_window = False          # scratch run must not depend on the wall clock
 for p in db.query(ContentPost).all():

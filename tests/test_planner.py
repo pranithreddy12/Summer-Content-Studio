@@ -218,13 +218,13 @@ def test_plan_week_never_touches_user_planned_posts(app, client, rule_row):
     pid = make_approved(caption="U", i=1)
     db = db_session()
     # user sets a planned time -> scheduled planned_by='user'
-    update_post(db, pid, PostUpdate(planned_publish_at=datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)))
+    update_post(db, pid, PostUpdate(planned_publish_at=datetime(2027, 3, 2, 12, 0, tzinfo=timezone.utc)))
     post = get_post(db, pid)
     assert post.planned_by == "user"
-    now = datetime(2026, 10, 25, 20, 0, tzinfo=timezone.utc)
-    plan_week(db_session(), rule_row, now, rng=random.Random(1), start_day=date(2026, 10, 26))
+    now = datetime(2027, 2, 28, 20, 0, tzinfo=timezone.utc)
+    plan_week(db_session(), rule_row, now, rng=random.Random(1), start_day=date(2027, 3, 1))
     post = get_post(db_session(), pid)
-    assert post.planned_publish_at == datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
+    assert post.planned_publish_at == datetime(2027, 3, 2, 12, 0, tzinfo=timezone.utc)
     assert post.planned_by == "user"
 
 
@@ -304,12 +304,12 @@ def test_api_plan_and_week(app, client, rule_row):
     for i in range(10):
         make_approved(caption="P", i=i)
     resp = client.post("/api/v1/planner/plan", json={"profile_id": 1, "platform": "instagram",
-                                                        "start_day": "2026-10-26"})
+                                                        "start_day": "2027-03-01"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["slots"] == 10 and body["filled"] == 10 and body["unfilled"] == 0
 
-    week = client.get("/api/v1/planner/week?profile_id=1&platform=instagram&start=2026-10-26").json()
-    assert week["start_day"] == "2026-10-26"
+    week = client.get("/api/v1/planner/week?profile_id=1&platform=instagram&start=2027-03-01").json()
+    assert week["start_day"] == "2027-03-01"
     assert len(week["items"]) == 10
     assert all(it["planned_by"] == "planner" for it in week["items"])

@@ -1,4 +1,4 @@
-"""Manual proof (not collected by pytest). Run from the repo root:  .venv\Scripts\python tests\manual\kill_restart.py
+r"""Manual proof (not collected by pytest). Run from the repo root:  .venv\Scripts\python tests\manual\kill_restart.py
 
 B6 'done when': kill the real worker process mid-publish, restart it, and show the post is neither
 lost nor published twice. A local fake Instagram server stands in for the platform."""
@@ -91,11 +91,16 @@ from app.db import get_session_factory, utcnow
 from app.models import ContentPost, PostingRule, PlatformAccount
 from app.services import accounts
 c = TestClient(create_app())
+c.auth = ("lee", "a-long-enough-password")      # PUBLISHING_MODE=live now requires the dashboard login
 a = c.post("/api/v1/assets/upload", files={"file": ("reel.mp4", b"\\x00\\x00\\x00\\x18ftypmp42" + bytes(64), "video/mp4")}, data={"description": "d"}).json()
 p = c.post("/api/v1/posts", json={"profile_id": 1, "platform": "instagram", "content_type": "reel", "campaign": "halloween",
           "caption": "Kill test", "hashtags": ["halloween"], "asset_id": a["id"]}).json()
 c.post("/api/v1/posts/%d/approve" % p["id"])
 db = get_session_factory()()
+if not db.query(PostingRule).count():   # no seeded rule: the hard 08:00-21:00 default would make this run depend on the wall clock
+    db.add(PostingRule(model_profile_id=1, platform="instagram", posts_per_week=7, min_per_day=1, max_per_day=1, window_start="08:00",
+                       window_end="21:00", min_gap_minutes=0, timezone="UTC", is_active=True))
+    db.flush()
 for r in db.query(PostingRule).all():
     r.enforce_window = False
 post = db.get(ContentPost, p["id"]); post.status, post.planned_publish_at = "scheduled", utcnow() - timedelta(minutes=1)
@@ -131,7 +136,7 @@ def scenario(name, went_public_before_crash):
     env = dict(os.environ, DATABASE_URL=f"sqlite:///{dbfile}", MEDIA_UPLOAD_DIR=str(tmp / "media"), PUBLISHING_MODE="live",
                PUBLIC_BASE_URL="https://studio.example.com", TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode(),
                MEDIA_URL_SECRET="s3cret", NOTIFY_PROVIDER="none", WORKER_INTERVAL_SECONDS="1", APP_TIMEZONE="UTC",
-               MISTRAL_API_KEY="", ANTHROPIC_API_KEY="", DASHBOARD_USERNAME="", DASHBOARD_PASSWORD="", PYTHONPATH=str(ROOT))
+               MISTRAL_API_KEY="", ANTHROPIC_API_KEY="", DASHBOARD_USERNAME="lee", DASHBOARD_PASSWORD="a-long-enough-password", PYTHONPATH=str(ROOT))
     launcher = tmp / "launch.py"
     launcher.write_text(LAUNCHER % port)
 
