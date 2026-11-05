@@ -97,3 +97,30 @@ def render_reply_user(post_caption: str, author: str, comment: str, extra_instru
         lines.append(f"<extra_instructions>{clean(extra_instructions, 300)}</extra_instructions>")
     lines.append("Write one reply.")
     return "\n".join(lines)
+
+
+FAN_REPLY_PROMPT_VERSION = "fan_reply_v1"
+
+
+def render_fan_reply_system(profile: ModelProfile) -> str:
+    """System prompt for a private Fanvue chat reply (persona + Lee's fan rules, H5)."""
+    rules = profile.fan_rules or {}
+    return _prompt_env.get_template("fan_reply_v1.j2").render(
+        profile=profile, never_say=list(rules.get("never_say") or []), notes=str(rules.get("notes") or "")[:1000])
+
+
+def render_fan_reply_user(messages: list, extra_instructions: str = "") -> str:
+    """The last messages, oldest first, as data. Angle brackets neutralised so a fan cannot close a tag."""
+    import re
+
+    def clean(text: str, limit: int) -> str:
+        return re.sub(r"[<>]", " ", text or "")[:limit].strip()
+
+    lines = ["<conversation>"]
+    for who, text in messages:
+        lines.append(f'<message from="{"fan" if who == "in" else "you"}">{clean(text, 600)}</message>')
+    lines.append("</conversation>")
+    if extra_instructions:
+        lines.append(f"<extra_instructions>{clean(extra_instructions, 300)}</extra_instructions>")
+    lines.append("Write one reply to the fan's latest message, or escalate.")
+    return "\n".join(lines)

@@ -252,6 +252,49 @@ def fetch_metrics(http, token: str, external_user_id: str, external_post_id: str
     return {"likes": p.get("likesCount"), "comments": p.get("commentsCount"), "tips": p.get("tips")}
 
 
+# ---- chats (fan inbox, PLAN_PHASE3 §8) ---------------------------------------------
+
+CHAT_PAGES_MAX = 5
+
+
+def list_waiting_chats(http, token: str) -> tuple[list[dict], bool]:
+    """Chats where the fan spoke last (`filter=not_answered`). Returns (chats, complete);
+    complete=False when the page cap was hit, so callers must not infer "answered elsewhere"."""
+    chats, cursor = [], None
+    for _ in range(CHAT_PAGES_MAX):
+        params = {"filter": "not_answered", "size": 50}
+        if cursor:
+            params["cursor"] = cursor
+        page = json_or_empty(_call(http, "GET", f"{API}/v1/chats", "chat list", headers=_headers(token), params=params))
+        chats.extend(page.get("data") or [])
+        cursor = page.get("nextCursor")
+        if not cursor:
+            return chats, True
+    return chats, False
+
+
+def get_messages(http, token: str, fan_uuid: str, limit: int = 20) -> list[dict]:
+    """Newest first. markAsRead=false: Lee still sees the chat as unread in the Fanvue app."""
+    resp = _call(http, "GET", f"{API}/v1/chats/{fan_uuid}/messages", "chat messages", headers=_headers(token),
+                 params={"limit": max(1, min(50, limit)), "markAsRead": "false"})
+    return json_or_empty(resp).get("data") or []
+
+
+def send_message(http, token: str, fan_uuid: str, text: str, media_uuids: list[str] | None = None,
+                 price_cents: int | None = None) -> str:
+    """Send one chat message; with media + price it is pay-to-view. Returns the message uuid."""
+    body: dict = {"text": text}
+    if media_uuids:
+        body["mediaUuids"] = media_uuids
+    if price_cents is not None:
+        body["price"] = price_cents
+    resp = _call(http, "POST", f"{API}/v1/chats/{fan_uuid}/message", "message send", headers=_headers(token), json=body)
+    uuid = json_or_empty(resp).get("messageUuid")
+    if not uuid:
+        raise PlatformError("bad_request", "Fanvue returned no message id.", False)
+    return str(uuid)
+
+
 def _unsupported(*_a, **_k):
     raise PlatformError("unsupported", "Fanvue post comments are not part of Phase 3.", False)
 

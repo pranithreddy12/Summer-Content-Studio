@@ -42,7 +42,7 @@ def _heartbeat(db, result: dict, now) -> None:
         db.add(hb)
     else:
         prev = hb.last_result or {}
-        for key in ("planner_ran", "engagement_at"):   # state that must survive loops that do not touch it
+        for key in ("planner_ran", "engagement_at", "fan_inbox_at", "fan_purge_at"):   # state that must survive loops that do not touch it
             if key not in result and key in prev:
                 result[key] = prev[key]
         hb.last_seen = now
@@ -253,6 +253,39 @@ def engagement_stage(db, now: datetime, http, result: dict) -> None:
     result["engagement"] = engagement.sync(db, now, http)
 
 
+def _last(db, key: str):
+    hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
+    value = (hb.last_result or {}).get(key) if hb else None
+    return datetime.fromisoformat(value) if value else None
+
+
+def fan_inbox_stage(db, now: datetime, http, result: dict, client_factory=None) -> None:
+    """Fanvue inbox every FANVUE_INBOX_POLL_SECONDS (live mode): sync, then AI drafts for Lee."""
+    from app.services import fan_inbox
+
+    last = _last(db, "fan_inbox_at")
+    if last and now - last < timedelta(seconds=get_settings().FANVUE_INBOX_POLL_SECONDS):
+        return
+    result["fan_inbox_at"] = now.isoformat()   # set first: a failing sync is not retried every minute
+    result["fan_inbox"] = fan_inbox.sync(db, now, http)
+    if not fan_inbox.has_draft_work(db):   # build the AI client only when a chat is waiting for a draft
+        return
+    if client_factory is None:
+        from app.api.dependencies import get_claude_client as client_factory
+    result["fan_drafts"] = fan_inbox.auto_draft(db, now, client_factory())
+
+
+def fan_purge_stage(db, now: datetime, result: dict) -> None:
+    """Delete fan message text past FAN_DATA_RETENTION_DAYS, once a day (H8)."""
+    from app.services import fan_inbox
+
+    last = _last(db, "fan_purge_at")
+    if last and now - last < timedelta(days=1):
+        return
+    result["fan_purge_at"] = now.isoformat()
+    result["fan_purge"] = fan_inbox.purge_old(db, now)
+
+
 def planner_tick(db, now: datetime, state: dict) -> dict:
     """AUTO_PLAN_ENABLED: once per local day, from PLANNER_RUN_HOUR on, plan the next 7 days for every
     active rule. `state` maps rule id -> last local day planned (persisted in the heartbeat row)."""
@@ -320,6 +353,8 @@ def run_once(db, now, http=None) -> dict:
         stage("refresh_tokens", lambda: result.__setitem__("tokens", refresh_due_tokens(db, now, http)))
     if mode == "live":
         stage("engagement", lambda: engagement_stage(db, now, http, result))
+        stage("fan_inbox", lambda: fan_inbox_stage(db, now, http, result))
+    stage("fan_purge", lambda: fan_purge_stage(db, now, result))
     if settings.AUTO_PLAN_ENABLED:
         def tick() -> None:
             hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()

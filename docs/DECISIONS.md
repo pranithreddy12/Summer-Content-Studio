@@ -195,3 +195,14 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **Crash safety for Fanvue posts:** the media is uploaded once and its uuid is stored on the asset (committed with the attempt's `media:<uuid>@<time>` ref) before `POST /v1/posts`. A retry or stuck-claim check first lists recent posts for that media uuid, so the upload is never repeated and the post is never created twice. Ceiling: the match is media uuid + time, not caption (`ponytail:` note in `check_status`).
 - **In-call `Retry-After`:** one retry when Fanvue's 429/503 asks for at most 120 s; longer waits go to the normal 5/15/60-minute backoff.
 - **Fanvue posts need an image or video** (text-only posts are not built). Audience defaults to `subscribers`; a price must be inside the PPV range or the post fails pre-flight as `invalid_fanvue_offer` (persistent: fails visibly).
+
+## Phase 3 C3 decisions (2026-11-06)
+- **Drafts reuse the 6-field generation schema** (as B7 did): `content_format = "escalate"` means the AI refused and `caption` holds the reason; otherwise `caption` is the reply. No new LLM client code; works with Claude and Mistral.
+- **Every draft is checked twice:** the fan's new messages go through `needs_escalation` before any AI call, and the AI's draft goes through `draft_problem` (never-say words + the same safety patterns). A failed check turns into an escalation, never into a draft.
+- **Safety patterns are deliberately broad** (e.g. "police" escalates "police costume"): a false escalation costs Lee one tap; a missed one can cost the account. A test pins both what must escalate and ordinary messages that must not.
+- **"Answered elsewhere":** a waiting chat that drops out of Fanvue's `not_answered` list is marked `replied`, but only when the list was read completely (page cap not hit).
+- **New fan message reopens `ignored`/`replied` chats; an open escalation stays escalated** until Summer speaks last (Lee answered, here or in the Fanvue app).
+- **One send per waiting chat:** `waiting -> sending -> replied` with an atomic claim; a second press is 409. A crash can leave `sending`; Reopen frees it after 5 minutes. A timeout says "check the Fanvue app before sending again" because the message may have gone through.
+- **Pushes never carry fan text or AI paraphrases:** escalation pushes say `@handle: <fixed reason>`; AI-written reasons stay in the dashboard.
+- **Auto-drafts:** at most 5 per worker run and 20 per hour (failed calls count), none without an AI key, and the AI client is only built when a chat is waiting for a draft (found in testing: building it unconditionally made a cached client leak between tests).
+- **Retention:** messages older than `FAN_DATA_RETENTION_DAYS` are deleted daily, in every mode except `off`; chats left empty go too, except open escalations.
