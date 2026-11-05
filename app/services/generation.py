@@ -22,7 +22,7 @@ from app.security import get_or_create_tags
 from app.config import get_settings
 from app.services.claude_client import ClaudeClient, GenerationError
 from app.services.frames import get_asset_images
-from app.services.posts import get_post
+from app.services.posts import ensure_asset_allowed, get_post
 
 logger = logging.getLogger("app.services.generation")
 
@@ -114,6 +114,7 @@ def generate_draft(
             raise HTTPException(status_code=404, detail="Asset not found")
         if not asset.is_active:
             raise HTTPException(status_code=409, detail="Asset is inactive")
+        ensure_asset_allowed(req.platform.value, asset)
 
     # Campaign must be existing tag slug
     from app.models import Tag

@@ -47,7 +47,9 @@ def eligible_assets(db: Session, media_type: Optional[str] = None, tag: Optional
     settings = get_settings()
     items = list_assets(db, media_type=media_type, tags=[tag] if tag else None,
                         unused=not include_used, limit=100_000)["items"]
-    return [a for a in items if a.storage_type in ("upload", "local_sync") and _usable(a, settings)]
+    # Random drafts target Instagram/TikTok only, so Fanvue-only media is never picked (H7)
+    return [a for a in items if a.storage_type in ("upload", "local_sync") and not a.fanvue_only
+            and _usable(a, settings)]
 
 
 def _campaign_for(asset: MediaAsset, requested: str) -> str:

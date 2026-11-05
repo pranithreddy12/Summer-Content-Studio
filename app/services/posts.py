@@ -124,6 +124,7 @@ def create_post(db: Session, req: PostCreate, idempotency_key: Optional[str] = N
         asset = db.get(MediaAsset, req.asset_id)
         if not asset or not asset.is_active:
             raise AppError("not_found", "Asset not found or inactive", status=404)
+        ensure_asset_allowed(req.platform.value, asset)
 
     # Validate profile
     profile = db.get(ModelProfile, req.profile_id)
@@ -238,6 +239,17 @@ def list_posts(
 # Status Actions
 # =========================================================================
 
+def ensure_asset_allowed(platform: str, asset: Optional[MediaAsset]) -> None:
+    """H7 (PLAN_PHASE3 §6): Fanvue-only media never goes to Instagram/TikTok.
+    Checked when media is attached, at approve, and again at publish (asset_is_publishable)."""
+    if asset is not None and asset.fanvue_only and platform != "fanvue":
+        raise AppError(
+            "fanvue_only_media",
+            "This media is marked Fanvue-only and can't be used on Instagram or TikTok.",
+            status=409,
+        )
+
+
 def approve_post(db: Session, post_id: int) -> ContentPost:
     """Approve a post (draft -> approved, or approved with planned time -> scheduled)."""
     post = get_post(db, post_id)
@@ -245,6 +257,7 @@ def approve_post(db: Session, post_id: int) -> ContentPost:
         raise AppError("not_found", "Post not found", status=404)
 
     new_status = _validate_transition(post.status, "approve")
+    ensure_asset_allowed(post.platform, post.asset)
 
     # If approved and has planned_publish_at, becomes scheduled
     if new_status == "approved" and post.planned_publish_at:
@@ -338,6 +351,7 @@ def update_post(db: Session, post_id: int, req: PostUpdate) -> ContentPost:
             asset = db.get(MediaAsset, asset_id)
             if not asset or not asset.is_active:
                 raise AppError("not_found", "Asset not found or inactive", status=404)
+            ensure_asset_allowed(post.platform, asset)
         post.media_asset_id = asset_id
 
     # Handle campaign change (campaign tag must exist)

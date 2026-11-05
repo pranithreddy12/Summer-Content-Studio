@@ -182,3 +182,9 @@ Defaults used until Lee answers H3-H10 (his requirements doc ended at H2). Each 
 
 ### Auto-send of fan replies: designed, not built (PLAN_PHASE3 §9)
 Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts have been sent with no more than 10 % heavily edited. Then `FANVUE_AUTO_REPLY=off|safe`: `safe` sends drafts only for non-escalated, text-only chats, after a 10-minute delay, inside the posting window. PPV is never automatic. Why wait: the risks are account-level (misleading fans about who replies, replying to things a human must handle), and Fanvue has no sandbox to try it safely.
+
+## Phase 3 C1 decisions (2026-11-06)
+- **Fanvue-only is one guard, checked at four points:** `posts.ensure_asset_allowed` runs when media is attached (create, edit, AI generate) and at approve; `publishing.asset_is_publishable` refuses it again at publish, because the flag can be set after a post was approved. `fanvue_only_media` is a persistent pre-flight failure, so the worker fails the post visibly instead of retrying. Random drafts (Instagram/TikTok only) never pick such assets.
+- **Seeded Fanvue rule is 7/week, 1/day, inactive** (the plan said 3/week): the existing planner validator requires at least one post per day. Lee changes it when he sets a cadence.
+- **Downgrading 0004 keeps any `platform='fanvue'` posts**; it only removes the seeded Fanvue rule and the new tables/columns. A downgrade should not delete user content.
+- **Fanvue captions:** no hashtags (prompt rule + hashtag cap 0 + `render_caption` sends the caption only).

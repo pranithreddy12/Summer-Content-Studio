@@ -31,7 +31,8 @@ from app.db import Base, UTCDateTime, utcnow
 class Platform(str, enum.Enum):
     instagram = "instagram"
     tiktok = "tiktok"
-    # x = "x"  # Phase 2
+    fanvue = "fanvue"  # Phase 3
+    # x = "x"  # deferred
 
 
 class ContentType(str, enum.Enum):
@@ -40,6 +41,7 @@ class ContentType(str, enum.Enum):
     story = "story"
     video = "video"
     photo_post = "photo_post"
+    fanvue_post = "fanvue_post"
 
 
 class PostStatus(str, enum.Enum):
@@ -80,6 +82,7 @@ class PostSource(str, enum.Enum):
 VALID_COMBOS = {
     Platform.instagram: {ContentType.feed_post, ContentType.reel, ContentType.story},
     Platform.tiktok: {ContentType.video, ContentType.photo_post},
+    Platform.fanvue: {ContentType.fanvue_post},
 }
 
 
@@ -119,6 +122,8 @@ class ModelProfile(Base):
     restricted_topics: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     style_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     cta_guidelines: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Phase 3 (H5): {"never_say": [...], "escalate_topics": [...], "notes": "..."} for private fan chats
+    fan_rules: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
@@ -159,6 +164,9 @@ class MediaAsset(Base):
     size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    # Phase 3 (H7): Fanvue-only media can never be posted to Instagram/TikTok
+    fanvue_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    fanvue_media_uuid: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # set after first upload
     imported_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
@@ -216,6 +224,10 @@ class ContentPost(Base):
     planned_by: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # planner | user
     group_key: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
     reminded_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+
+    # ---- Phase 3 Fanvue columns (null = defaults: audience 'subscribers', free post) ----
+    fanvue_audience: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    fanvue_price_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -454,4 +466,84 @@ class NotificationLog(Base):
     provider: Mapped[str] = mapped_column(String(20), nullable=False)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     error_category: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+
+
+# =========================================================================
+# Phase 3: Fanvue (PLAN_PHASE3 §5)
+# =========================================================================
+
+class FanChat(Base):
+    """One Fanvue fan conversation. Only uuid/handle/display name are stored about the fan (H8)."""
+
+    __tablename__ = "fan_chats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fan_uuid: Mapped[str] = mapped_column(String(64), nullable=False)
+    handle: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    last_message_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True, index=True)
+    unread_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="needs_reply", index=True)  # needs_reply/escalated/replied/ignored
+    escalation_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    draft_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    draft_generated_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    messages: Mapped[List["FanMessage"]] = relationship(
+        "FanMessage", back_populates="chat", lazy="selectin", cascade="all, delete-orphan",
+        order_by="FanMessage.sent_at",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("model_profile_id", "fan_uuid", name="uq_fan_chat_profile_fan"),
+    )
+
+
+class FanMessage(Base):
+    """A message in a fan chat. Text is purged after FAN_DATA_RETENTION_DAYS."""
+
+    __tablename__ = "fan_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("fan_chats.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fanvue_message_uuid: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)  # in | out
+    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    message_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # Fanvue `type`
+    sent_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True, index=True)
+    ppv_price_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    media_asset_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True
+    )
+    sent_via: Mapped[str] = mapped_column(String(10), nullable=False, default="fanvue")  # fanvue | studio
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)
+
+    chat: Mapped["FanChat"] = relationship("FanChat", back_populates="messages")
+
+
+class TrackingLink(Base):
+    """A Fanvue tracking link (bio/campaign attribution). Counts are refreshed by the worker."""
+
+    __tablename__ = "tracking_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fanvue_uuid: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)  # Fanvue externalSocialPlatform
+    link_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    clicks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    acquired_subscribers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    acquired_followers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    earnings_net_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    synced_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False)

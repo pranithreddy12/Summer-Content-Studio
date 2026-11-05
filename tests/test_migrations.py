@@ -11,21 +11,24 @@ from alembic.config import Config
 import pytest
 
 
-def _run_upgrade(db_path, to):
+def _run(db_path, to, fn):
     old = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     try:
         from app.config import clear_settings_cache
 
         clear_settings_cache()
-        cfg = Config("alembic.ini")
-        command.upgrade(cfg, to)
+        fn(Config("alembic.ini"), to)
     finally:
         clear_settings_cache()
         if old is None:
             os.environ.pop("DATABASE_URL", None)
         else:
             os.environ["DATABASE_URL"] = old
+
+
+def _run_upgrade(db_path, to):
+    _run(db_path, to, command.upgrade)
 
 
 def test_upgrade_head_on_empty_db(tmp_path):
@@ -38,7 +41,8 @@ def test_upgrade_head_on_empty_db(tmp_path):
         # but the table + new columns + Phase 2 tables must exist.
         tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         for t in ["platform_accounts", "oauth_states", "publish_attempts", "post_metrics",
-                  "comments", "worker_heartbeats", "notifications", "posting_rules"]:
+                  "comments", "worker_heartbeats", "notifications", "posting_rules",
+                  "fan_chats", "fan_messages", "tracking_links"]:
             assert t in tables
         assert con.execute("SELECT COUNT(*) FROM posting_rules").fetchone()[0] == 0
         cols = {r[1] for r in con.execute("PRAGMA table_info(content_posts)").fetchall()}
@@ -81,7 +85,44 @@ def test_upgrade_from_phase1_db_keeps_data(tmp_path):
         profile = con.execute("SELECT slug, name FROM model_profiles").fetchone()
         assert profile == ("summer", "Summer")
         # New infrastructure present and seeded
-        rules = con.execute("SELECT COUNT(*) FROM posting_rules WHERE is_active=0").fetchone()[0]
-        assert rules == 2
+        rules = con.execute("SELECT platform, posts_per_week, min_per_day, max_per_day FROM posting_rules"
+                            " WHERE is_active=0 ORDER BY platform").fetchall()
+        assert rules == [("fanvue", 7, 1, 1), ("instagram", 10, 1, 2), ("tiktok", 10, 1, 2)]
+    finally:
+        con.close()
+
+
+PHASE2_HEAD = "96d2f6d84905"
+
+
+def test_phase3_upgrade_keeps_assets_and_downgrades_cleanly(tmp_path):
+    """0004 adds NOT NULL media_assets.fanvue_only to tables that already hold rows."""
+    db = str(tmp_path / "phase2.db")
+    _run_upgrade(db, PHASE2_HEAD)
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO media_assets (filename, media_type, storage_type, local_relpath, description, is_active,"
+        " imported_at, created_at, updated_at)"
+        " VALUES ('a.jpg', 'image', 'upload', 'a.jpg', '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+    )
+    con.commit()
+    con.close()
+
+    _run_upgrade(db, "head")
+    con = sqlite3.connect(db)
+    try:
+        assert con.execute("SELECT filename, fanvue_only, fanvue_media_uuid FROM media_assets").fetchone() == ("a.jpg", 0, None)
+        cols = {r[1] for r in con.execute("PRAGMA table_info(content_posts)").fetchall()}
+        assert {"fanvue_audience", "fanvue_price_cents"} <= cols
+        assert "fan_rules" in {r[1] for r in con.execute("PRAGMA table_info(model_profiles)").fetchall()}
+    finally:
+        con.close()
+
+    _run(db, PHASE2_HEAD, command.downgrade)
+    con = sqlite3.connect(db)
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        assert not {"fan_chats", "fan_messages", "tracking_links"} & tables
+        assert con.execute("SELECT filename FROM media_assets").fetchone() == ("a.jpg",)
     finally:
         con.close()

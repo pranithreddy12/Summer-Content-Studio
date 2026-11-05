@@ -241,3 +241,11 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Tests:** no code changed; full suite **521 passed** (0 failed); `/health` 200.
 **Unverified (live checklist):** real `expires_in`, `publishedAt` on immediate posts, `tips`/earnings-source object shapes, `not_answered` semantics, PPV as seen by a fan.
 **Next:** C1 - config, enums, migration 0004, `fanvue_only` rule, Fanvue caption rule, seeded inactive posting rule.
+
+
+## Phase 3 - C1 foundations (2026-11-06)
+**Files changed:** `app/config.py` (Fanvue settings with validators: no `write:creator`, PPV min <= max, weekday/hour ranges, blank credentials = unset), `.env.example`, `app/models.py` (`Platform.fanvue`, `ContentType.fanvue_post`, `media_assets.fanvue_only/fanvue_media_uuid`, `content_posts.fanvue_audience/fanvue_price_cents`, `model_profiles.fan_rules`, tables `fan_chats`, `fan_messages`, `tracking_links`), `migrations/versions/5096f3308c1a_0004_phase3_fanvue.py` (hand-reviewed: import fixed, `server_default` for `fanvue_only`, inactive Fanvue rule seeded, downgrade keeps posts), `app/services/posts.py` (`ensure_asset_allowed` at create/edit/approve), `app/services/generation.py`, `app/services/random_draft.py`, `app/services/publishing.py` (`fanvue_only_media` pre-flight + reason + persistent; Fanvue caption without hashtags), `app/prompts/platforms.py` (Fanvue rule, hashtag cap 0), `tests/conftest.py` (blank Fanvue credentials).
+**Tests:** new `tests/test_phase3_rules.py` (21) and `tests/test_migrations.py` extended (Phase 2 DB with an asset row upgrades to 0004 and downgrades cleanly; seeded rules checked). Two old tests' fake objects got the new attributes. Full suite **543 passed** (C0 baseline 521). `alembic check`: models and migrations match. **Mutation check:** with the guard disabled, 5 of the 21 new tests fail.
+**Note for local dev databases:** run `python -m alembic upgrade head` before starting the app on an existing `data/app.db` (new columns).
+**Not verified:** nothing touches Fanvue yet; there is no UI to set "Fanvue only" (C4) and no API field for audience/price (C2/C4).
+**Next:** C2 - `app/platforms/fanvue.py` (OAuth with PKCE + Basic auth, rotating refresh, multipart upload, publish, check_status), Accounts card, `allow_refresh=False` for the web side.

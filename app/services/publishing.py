@@ -65,6 +65,8 @@ def asset_is_publishable(post: ContentPost) -> tuple[bool, Optional[str]]:
         return False, "media_required"
     if asset.storage_type == StorageType.external_url.value:
         return False, "media_not_publishable"
+    if asset.fanvue_only and post.platform != "fanvue":  # H7, PLAN_PHASE3 §6
+        return False, "fanvue_only_media"
     # Platform media rules (docs/PLATFORM_API_NOTES.md): Instagram images must be JPEG;
     # TikTok inbox mode takes videos only.
     if post.platform == "instagram" and asset.media_type == "image" and (asset.mime_type or "") != "image/jpeg"             and post.content_type != "reel":
@@ -90,6 +92,8 @@ def preflight_reasons(db: Session, post: ContentPost, now: Optional[datetime] = 
         ok, code = asset_is_publishable(post)
         if not ok and code == "media_not_publishable":
             reasons.append("media_not_publishable: external-url media cannot be served to the platform")
+        elif not ok and code == "fanvue_only_media":
+            reasons.append("fanvue_only_media: this media is marked Fanvue-only; pick another asset")
     if publishing_mode() == "live" and connected_account(db, post.model_profile_id, post.platform) is None:
         reasons.append("account_not_connected: connect the account on the Accounts page")
     if post.caption and len(render_caption(post)) > MAX_CAPTION_LENGTH:
@@ -137,7 +141,9 @@ def check_publishable(
 def render_caption(post: ContentPost) -> str:
     """The full caption sent to the platform: caption + blank line + hashtags.
 
-    Built in exactly one place (PLAN §7)."""
+    Built in exactly one place (PLAN §7). Fanvue gets the caption only (PLAN_PHASE3 §6)."""
+    if post.platform == "fanvue":
+        return post.caption
     tags = " ".join("#" + h for h in (post.hashtags or []))
     if tags:
         return f"{post.caption}\n\n{tags}"
@@ -306,7 +312,8 @@ STUCK_AFTER = timedelta(minutes=15)
 
 # Pre-flight problems that will not fix themselves: the worker fails the post (visible + push)
 # instead of skipping it silently every minute. (Window / status problems are NOT in this set.)
-PERSISTENT_PREFLIGHT = {"account_not_connected", "media_required", "media_not_publishable", "caption_too_long"}
+PERSISTENT_PREFLIGHT = {"account_not_connected", "media_required", "media_not_publishable", "caption_too_long",
+                        "fanvue_only_media"}
 
 
 def fail_preflight(db: Session, post_id: int, e: AppError, now: datetime) -> ContentPost:

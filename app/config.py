@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -82,6 +82,20 @@ class Settings(BaseSettings):
     # Dropbox sync disk guard
     MIN_FREE_DISK_GB: float = 2.0
 
+    # ---- Phase 3: Fanvue (PLAN_PHASE3 §4) ----
+    FANVUE_CLIENT_ID: Optional[str] = None
+    FANVUE_CLIENT_SECRET: Optional[SecretStr] = None
+    FANVUE_API_VERSION: str = "2025-06-26"
+    # Never write:creator (prices/promotions/payouts stay in Fanvue's own app, H10)
+    FANVUE_SCOPES: str = ("read:self read:creator read:post write:post read:media write:media "
+                          "read:chat write:chat read:fan read:insights read:tracking_links write:tracking_links")
+    FANVUE_INBOX_POLL_SECONDS: int = 120
+    FANVUE_PPV_MIN_CENTS: int = 300
+    FANVUE_PPV_MAX_CENTS: int = 5000
+    FAN_DATA_RETENTION_DAYS: int = 90
+    FANVUE_REPORT_WEEKDAY: int = 0  # Monday, in APP_TIMEZONE
+    FANVUE_REPORT_HOUR: int = 9
+
     @field_validator("PUBLISHING_MODE")
     @classmethod
     def validate_publishing_mode(cls, v: str) -> str:
@@ -123,12 +137,48 @@ class Settings(BaseSettings):
     @field_validator(
         "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET",
         "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-        "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY", mode="before",
+        "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY",
+        "FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET", mode="before",
     )
     @classmethod
     def _empty_is_unset(cls, v):
         # `KEY=` (copied from .env.example, or blanked by tests) means "not configured"
         return None if isinstance(v, str) and v.strip() == "" else v
+
+    @field_validator("FANVUE_SCOPES")
+    @classmethod
+    def validate_fanvue_scopes(cls, v: str) -> str:
+        if "write:creator" in v.split():
+            raise ValueError("FANVUE_SCOPES must not include write:creator (prices and payouts stay in Fanvue)")
+        return " ".join(v.split())
+
+    @field_validator("FANVUE_INBOX_POLL_SECONDS", "FANVUE_PPV_MIN_CENTS", "FANVUE_PPV_MAX_CENTS",
+                     "FAN_DATA_RETENTION_DAYS")
+    @classmethod
+    def validate_positive_int(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("must be >= 1")
+        return v
+
+    @field_validator("FANVUE_REPORT_WEEKDAY")
+    @classmethod
+    def validate_weekday(cls, v: int) -> int:
+        if not 0 <= v <= 6:
+            raise ValueError("FANVUE_REPORT_WEEKDAY must be 0 (Monday) to 6 (Sunday)")
+        return v
+
+    @field_validator("FANVUE_REPORT_HOUR")
+    @classmethod
+    def validate_hour(cls, v: int) -> int:
+        if not 0 <= v <= 23:
+            raise ValueError("FANVUE_REPORT_HOUR must be 0-23")
+        return v
+
+    @model_validator(mode="after")
+    def validate_ppv_range(self) -> "Settings":
+        if self.FANVUE_PPV_MIN_CENTS > self.FANVUE_PPV_MAX_CENTS:
+            raise ValueError("FANVUE_PPV_MIN_CENTS must be <= FANVUE_PPV_MAX_CENTS")
+        return self
 
     @field_validator("MEDIA_SYNC_DIR", mode="before")
     @classmethod

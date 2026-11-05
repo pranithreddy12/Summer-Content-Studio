@@ -8,7 +8,8 @@ from app.services.publishing import asset_is_publishable
 
 
 def p(platform, content_type, media_type, mime):
-    asset = SimpleNamespace(is_active=True, storage_type="upload", media_type=media_type, mime_type=mime)
+    asset = SimpleNamespace(is_active=True, storage_type="upload", media_type=media_type, mime_type=mime,
+                            fanvue_only=False)
     return SimpleNamespace(platform=platform, content_type=content_type, media_asset_id=1, asset=asset)
 
 

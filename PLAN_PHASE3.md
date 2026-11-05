@@ -130,7 +130,7 @@ tracking_links
   id PK, model_profile_id FK, fanvue_uuid unique, name, platform String(20), link_url,
   clicks int, acquired_subscribers int, acquired_followers int, earnings_net_cents int null, synced_at UTC
 ```
-Seed: one inactive `posting_rules` row (`platform='fanvue'`, `posts_per_week=3`, `max_per_day=1`) for the Summer profile. No fan data is seeded.
+Seed: one inactive `posting_rules` row (`platform='fanvue'`, `posts_per_week=7`, `min_per_day=max_per_day=1`; the planner's validator requires ≥ 1 post/day) for the Summer profile. No fan data is seeded.
 
 ---
 

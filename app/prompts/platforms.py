@@ -5,11 +5,13 @@ from app.models import Platform, ContentType
 CONTENT_TYPES = {
     Platform.instagram: [ContentType.feed_post, ContentType.reel, ContentType.story],
     Platform.tiktok: [ContentType.video, ContentType.photo_post],
+    Platform.fanvue: [ContentType.fanvue_post],
 }
 
 HASHTAG_CAP = {
     Platform.instagram: 15,
     Platform.tiktok: 8,
+    Platform.fanvue: 0,  # Fanvue captions carry no hashtags
 }
 
 PLATFORM_RULES = {
@@ -33,6 +35,13 @@ PLATFORM_RULES = {
         ),
         ContentType.photo_post: (
             "TikTok photo-mode caption. Short and playful. 3–6 hashtags."
+        ),
+    },
+    Platform.fanvue: {
+        ContentType.fanvue_post: (
+            "Fanvue post caption for paying subscribers. Personal and warm, written to people who already follow her. "
+            "Under 1,000 characters. No hashtags (return an empty list). Describe only what is visible in the media; "
+            "never invent explicit details."
         ),
     },
 }

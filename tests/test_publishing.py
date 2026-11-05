@@ -207,8 +207,8 @@ def test_dashboard_mark_posted_route(app, client, approved_post_fixture, active_
 
 
 def test_render_caption():
-    assert render_caption(SimpleNamespace(caption="Hello", hashtags=["a", "b"])) == "Hello\n\n#a #b"
-    assert render_caption(SimpleNamespace(caption="Hello", hashtags=[])) == "Hello"
+    assert render_caption(SimpleNamespace(platform="instagram", caption="Hello", hashtags=["a", "b"])) == "Hello\n\n#a #b"
+    assert render_caption(SimpleNamespace(platform="instagram", caption="Hello", hashtags=[])) == "Hello"
 
 
 @pytest.fixture
