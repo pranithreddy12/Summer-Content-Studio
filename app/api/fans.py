@@ -68,3 +68,31 @@ def sync_now(db: Session = Depends(get_db), http=Depends(get_platform_http)):
     if publishing_mode() != "live":
         raise AppError("mode_not_live", "The fan inbox syncs in live mode only.", status=409)
     return svc.sync(db, utcnow(), http)
+
+
+# ---- links + report (PLAN_PHASE3 §7, §10) ---------------------------------------
+
+from app.schemas import TrackingLinkCreate, TrackingLinkOut  # noqa: E402
+from app.services import fanvue_report as report  # noqa: E402
+
+fanvue_router = APIRouter(prefix="/fanvue", tags=["fanvue"])
+
+
+@fanvue_router.get("/links", response_model=list[TrackingLinkOut])
+def list_links(db: Session = Depends(get_db)):
+    return report.list_links(db)
+
+
+@fanvue_router.post("/links", response_model=TrackingLinkOut, status_code=201)
+def create_link(req: TrackingLinkCreate, db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    return report.create_link(db, http, req.name, req.platform)
+
+
+@fanvue_router.post("/links/bio", response_model=list[TrackingLinkOut])
+def ensure_bio_links(db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    return report.ensure_bio_links(db, http)
+
+
+@fanvue_router.get("/summary")
+def summary(days: int = 7, db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    return report.summary(db, http, days)

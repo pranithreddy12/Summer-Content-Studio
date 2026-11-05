@@ -213,3 +213,12 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **A changed Fanvue price or audience resets approval**, like any content edit: Lee approves the offer he will actually publish.
 - **Fan handles never go into inline JavaScript** (the Send confirm text is generic): HTML-escaping does not make text safe inside a JS string in an `onclick`. Note: the older Engagement page interpolates Instagram usernames there; Instagram's username charset makes it harmless today.
 - **One platform list for every picker** (`UI_PLATFORMS`/`UI_CONTENT_TYPES` from `prompts.platforms.CONTENT_TYPES`): the audit found the Generate page and Queue filter still hard-coded Instagram/TikTok, so Fanvue posts could not be generated from the dashboard.
+
+## Phase 3 C5 decisions (2026-11-06)
+- **Report = live fetch + 10-minute in-process cache, nothing stored** (`ponytail:` note in `fanvue_report`): two Fanvue calls per refresh; earnings never sit in our database or backups. Ceiling: one web process; a slow Fanvue can hold the page up to `PLATFORM_TIMEOUT_SECONDS`.
+- **Amounts shown are net** (Lee's cut after fees, refunds excluded, USD cents per the spec); gross is shown next to it in the source table only.
+- **Periods are whole local days** (`APP_TIMEZONE`, ending at today's local midnight), so "last 7 days" means the same thing in GMT and BST.
+- **Bio links are created once and never duplicated:** before creating, the existing Fanvue links are read back, so a lost database reuses the old links (and the URLs Lee already pasted).
+- **Link names** are lowercase letters, digits and dashes, 3-60 chars, at most 20 links; links Lee makes in the Fanvue app show up too after the next 6-hourly sync.
+- **Weekly digest:** Monday from 09:00 local, one push per ISO week (a sent key is never re-sent); the stage runs at most hourly so a failing push or Fanvue error is not retried every minute. The text carries amounts and link names only, never fan data.
+- **Links are shown as cards, not a table:** the 375 px check showed the table squeezing names to one letter per line and the URL box to "htt".

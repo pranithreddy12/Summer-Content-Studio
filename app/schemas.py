@@ -506,3 +506,20 @@ class FanSendRequest(BaseSchema):
     text: str = Field(..., min_length=1, max_length=1000)
     asset_id: Optional[Id] = None
     price_cents: Optional[int] = Field(None, ge=1, le=1_000_000)
+
+
+class TrackingLinkCreate(BaseSchema):
+    name: str = Field(..., min_length=3, max_length=60)
+    platform: str = Field(..., max_length=20)
+
+
+class TrackingLinkOut(BaseSchema):
+    id: int
+    name: str
+    platform: str
+    link_url: str
+    clicks: int
+    acquired_subscribers: int
+    acquired_followers: int
+    earnings_net_cents: Optional[int]
+    synced_at: Optional[datetime]

@@ -276,3 +276,12 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Audit findings fixed:** Fanvue missing from Generate and Queue pickers (posts could not be generated from the UI); overview per-platform table ignored Fanvue; sync race -> IntegrityError 500; warning banner class did not exist.
 **Not done:** sidebar badge (see DECISIONS); real Fanvue/LLM.
 **Next:** C5 - tracking links + `/fanvue` report page + weekly digest.
+
+
+## Phase 3 - C5 links + report (2026-11-06)
+**Files created:** `app/services/fanvue_report.py` (`ensure_bio_links`, `create_link`, `sync_links`, `summary` with cache, `digest_text`, `weekly_digest`), `app/web/templates/fanvue.html`, `tests/test_fanvue_report.py` (19).
+**Files changed:** `app/platforms/fanvue.py` (`create_tracking_link`, `list_tracking_links`, `earnings_summary`, `subscriber_events`), `app/services/scheduler.py` (`fanvue_links_stage` every 6 h, `fanvue_digest_stage` hourly check; both live-only and skipped without a Fanvue account), `app/api/fans.py` (`/api/v1/fanvue/links`, `/links/bio`, `/summary?days=7|30`), `app/schemas.py`, `app/main.py`, `app/web/routes.py` (`/fanvue` page + link forms), `app/web/templates/base.html` (Fanvue nav), `docs/PLATFORM_API_NOTES.md` (earnings fields now VERIFIED-DOC).
+**Tests:** full suite **676 passed** (C4 baseline 657). **Mutation checks** (each caught): no Fanvue re-read before creating bio links, no weekly dedupe, no cache, UTC instead of local midnight, any `days` accepted.
+**Browser check (375 px, dry run, seeded links):** page 375 px; the first version's links table squeezed names to one letter per line and the URL box to "htt" -> rebuilt as cards (URL box 308 px wide), re-checked.
+**Not verified:** real Fanvue numbers (L7), Telegram delivery of the digest, whether Instagram/TikTok accept Fanvue links in a bio (Lee decides).
+**Next:** C6 - docs (PLATFORM_SETUP Fanvue section, README, DEMO_PHASE3, security checklist), leak scan extended to fan text, delivery zip v0.3.0; then a whole-Phase-3 audit pass.

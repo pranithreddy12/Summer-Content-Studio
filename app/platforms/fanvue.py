@@ -295,6 +295,56 @@ def send_message(http, token: str, fan_uuid: str, text: str, media_uuids: list[s
     return str(uuid)
 
 
+# ---- tracking links + insights (PLAN_PHASE3 §7, §10) ---------------------------------
+
+LINK_PLATFORMS = ("instagram", "tiktok", "facebook", "reddit", "snapchat", "twitter", "youtube", "other")
+
+
+def create_tracking_link(http, token: str, name: str, platform: str) -> dict:
+    resp = _call(http, "POST", f"{API}/v1/tracking-links", "tracking link creation", headers=_headers(token),
+                 json={"name": name, "externalSocialPlatform": platform})
+    link = json_or_empty(resp)
+    if not link.get("uuid") or not link.get("linkUrl"):
+        raise PlatformError("bad_request", "Fanvue returned no tracking link.", False)
+    return link
+
+
+def list_tracking_links(http, token: str, pages_max: int = 5) -> list[dict]:
+    links, cursor = [], None
+    for _ in range(pages_max):
+        params = {"limit": 50, **({"cursor": cursor} if cursor else {})}
+        page = json_or_empty(_call(http, "GET", f"{API}/v1/tracking-links", "tracking links", headers=_headers(token),
+                                   params=params))
+        links.extend(page.get("data") or [])
+        cursor = page.get("nextCursor")
+        if not cursor:
+            break
+    return links
+
+
+def earnings_summary(http, token: str, start: datetime, end: datetime, tz: str) -> dict:
+    """Totals + breakdown by source for [start, end) - all amounts USD cents (gross and net)."""
+    resp = _call(http, "GET", f"{API}/v1/insights/earnings/summary", "earnings summary", headers=_headers(token),
+                 params={"startDate": start.isoformat(), "endDate": end.isoformat(), "granularity": "day",
+                         "timezone": tz})
+    return json_or_empty(resp)
+
+
+def subscriber_events(http, token: str, start: datetime, end: datetime) -> list[dict]:
+    """Per-day `{date, total, newSubscribersCount, cancelledSubscribersCount}` for [start, end)."""
+    rows, cursor = [], None
+    for _ in range(5):
+        params = {"startDate": start.isoformat(), "endDate": end.isoformat(), "size": 50,
+                  **({"cursor": cursor} if cursor else {})}
+        page = json_or_empty(_call(http, "GET", f"{API}/v1/insights/subscribers", "subscriber insights",
+                                   headers=_headers(token), params=params))
+        rows.extend(page.get("data") or [])
+        cursor = page.get("nextCursor")
+        if not cursor:
+            break
+    return rows
+
+
 def _unsupported(*_a, **_k):
     raise PlatformError("unsupported", "Fanvue post comments are not part of Phase 3.", False)
 

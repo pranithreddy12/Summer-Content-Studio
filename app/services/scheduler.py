@@ -42,7 +42,8 @@ def _heartbeat(db, result: dict, now) -> None:
         db.add(hb)
     else:
         prev = hb.last_result or {}
-        for key in ("planner_ran", "engagement_at", "fan_inbox_at", "fan_purge_at"):   # state that must survive loops that do not touch it
+        for key in ("planner_ran", "engagement_at", "fan_inbox_at", "fan_purge_at", "fanvue_links_at",
+                    "fanvue_digest_at"):   # state that must survive loops that do not touch it
             if key not in result and key in prev:
                 result[key] = prev[key]
         hb.last_seen = now
@@ -275,6 +276,35 @@ def fan_inbox_stage(db, now: datetime, http, result: dict, client_factory=None) 
     result["fan_drafts"] = fan_inbox.auto_draft(db, now, client_factory())
 
 
+def _fanvue_connected(db) -> bool:
+    from app.models import PlatformAccount
+
+    return db.execute(select(PlatformAccount.id).where(PlatformAccount.platform == "fanvue",
+                                                       PlatformAccount.status == "connected")).first() is not None
+
+
+def fanvue_links_stage(db, now: datetime, http, result: dict) -> None:
+    """Tracking-link counts every 6 hours (live mode, Fanvue connected)."""
+    from app.services import fanvue_report
+
+    last = _last(db, "fanvue_links_at")
+    if (last and now - last < fanvue_report.SYNC_EVERY) or not _fanvue_connected(db):
+        return
+    result["fanvue_links_at"] = now.isoformat()
+    result["fanvue_links"] = fanvue_report.sync_links(db, http, now)
+
+
+def fanvue_digest_stage(db, now: datetime, http, result: dict) -> None:
+    """Weekly report push; checked at most hourly so a failing push is not retried every minute."""
+    from app.services import fanvue_report
+
+    last = _last(db, "fanvue_digest_at")
+    if (last and now - last < timedelta(hours=1)) or not _fanvue_connected(db):
+        return
+    result["fanvue_digest_at"] = now.isoformat()
+    result["fanvue_digest"] = fanvue_report.weekly_digest(db, http, now)
+
+
 def fan_purge_stage(db, now: datetime, result: dict) -> None:
     """Delete fan message text past FAN_DATA_RETENTION_DAYS, once a day (H8)."""
     from app.services import fan_inbox
@@ -354,6 +384,8 @@ def run_once(db, now, http=None) -> dict:
     if mode == "live":
         stage("engagement", lambda: engagement_stage(db, now, http, result))
         stage("fan_inbox", lambda: fan_inbox_stage(db, now, http, result))
+        stage("fanvue_links", lambda: fanvue_links_stage(db, now, http, result))
+        stage("fanvue_digest", lambda: fanvue_digest_stage(db, now, http, result))
     stage("fan_purge", lambda: fan_purge_stage(db, now, result))
     if settings.AUTO_PLAN_ENABLED:
         def tick() -> None:

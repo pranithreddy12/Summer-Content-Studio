@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Fanvue — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Fanvue</span>
+      <h1>Fanvue report</h1>
+      <p class="page-lede">Earnings and subscribers come straight from Fanvue (refreshed every 10 minutes). Amounts are <strong>net</strong>: your share after Fanvue's fees, in US dollars. Payments and payouts stay in Fanvue.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}" href="/fanvue?days=7">7 days</a>
+      <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}" href="/fanvue?days=30">30 days</a>
+    </div>
+  </header>
+
+  <section class="section">
+    {% if report %}
+    <div class="stat-grid">
+      <div class="stat stat-accent"><div class="stat-value">{{ money(report.net) }}</div><div class="stat-label">Net, last {{ days }} days</div></div>
+      <div class="stat"><div class="stat-value">+{{ report.new_subscribers }}</div><div class="stat-label">New subscribers</div></div>
+      <div class="stat"><div class="stat-value">{{ report.cancelled_subscribers }}</div><div class="stat-label">Cancelled</div></div>
+      <div class="stat"><div class="stat-value">{{ money(report.this_month_net) }}</div><div class="stat-label">Net this month</div></div>
+    </div>
+    {% if report.sources %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Source</th><th class="td-num">Net</th><th class="td-num">Gross</th></tr></thead>
+      <tbody>{% for s in report.sources %}<tr><td>{{ s.source }}</td><td class="td-num">{{ money(s.net) }}</td><td class="td-num">{{ money(s.gross) }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    <p class="small">{{ report.start[:10] }} to {{ report.end[:10] }} ({{ report.timezone }}).</p>
+    {% else %}
+    <div class="banner banner-info"><p>{{ report_error }}</p></div>
+    {% endif %}
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>Links for Instagram and TikTok</h2></div>
+    <p class="small">Paste a link into Summer's bio yourself. Fanvue counts the clicks and the subscribers each link brings. A bio holds one link, so this shows which <em>platform</em> or campaign brings subscribers, not which post. Check each platform's rules on links to subscription sites before you paste.</p>
+    {% for l in links %}
+    <div class="card" style="padding:14px;margin-bottom:10px;">
+      <p style="margin:0 0 6px;overflow-wrap:anywhere;"><strong>{{ l.name }}</strong>
+        {% if l.name in bio_names %}<span class="badge badge-scheduled">bio</span>{% endif %}
+        <span class="small">· {{ l.platform }}</span></p>
+      <p class="small" style="margin:0 0 8px;">{{ l.clicks }} clicks · {{ l.acquired_subscribers }} subscribers · {% if l.earnings_net_cents is not none %}{{ money(l.earnings_net_cents) }} net{% else %}no earnings yet{% endif %}</p>
+      <input type="text" readonly value="{{ l.link_url }}" aria-label="Link for {{ l.name }}" onclick="this.select()"
+             style="width:100%;box-sizing:border-box;font-size:0.85em;">
+    </div>
+    {% endfor %}
+    <div class="form-actions" style="margin-top:12px;">
+      <form method="post" action="/fanvue/links/bio" class="inline-form"><button type="submit" class="btn btn-primary" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}>Create bio links</button></form>
+    </div>
+    <form method="post" action="/fanvue/links" class="form-box" style="margin-top:12px;">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="link_name">Campaign link name</label>
+          <input type="text" name="name" id="link_name" placeholder="halloween-2027-ig" pattern="[a-z0-9][a-z0-9\-]{2,59}" required>
+        </div>
+        <div class="form-group">
+          <label for="link_platform">Where it goes</label>
+          <select name="platform" id="link_platform">{% for p in link_platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <button type="submit" class="btn" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}>Create link</button>
+    </form>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>Fanvue posts published from here</h2></div>
+    {% if posts %}
+    <ul>{% for p in posts %}<li><a href="/posts/{{ p.id }}">#{{ p.id }}</a> · {{ (p.published_at | local).strftime('%Y-%m-%d %H:%M') if p.published_at else '' }} · {{ p.caption | truncate(60) }}{% if p.fanvue_price_cents %} · {{ money(p.fanvue_price_cents) }}{% endif %}</li>{% endfor %}</ul>
+    {% else %}<p class="small">None yet.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

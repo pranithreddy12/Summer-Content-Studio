@@ -1408,3 +1408,54 @@ def fan_reopen(chat_id: int, db: Session = Depends(get_db)):
     except AppError as e:
         return _fan_redirect(chat_id, e.message, "error")
     return _fan_redirect(chat_id, "Chat reopened.")
+
+
+# =========================================================================
+# Phase 3 C5: Fanvue links + report (PLAN_PHASE3 §7, §10, §12)
+# =========================================================================
+
+@router.get("/fanvue", response_class=HTMLResponse)
+def fanvue_page(request: Request, days: int = 7, db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    """Sync `def`: the report is fetched live from Fanvue (cached 10 minutes)."""
+    from app.services import AppError
+    from app.services import fanvue_report as rep
+
+    days = days if days in (7, 30) else 7
+    report, report_error = None, None
+    try:
+        report = rep.summary(db, http, days)
+    except AppError as e:
+        report_error = e.message
+    posts = db.execute(select(ContentPost).where(ContentPost.platform == "fanvue", ContentPost.status == "published")
+                       .order_by(desc(ContentPost.published_at)).limit(20)).scalars().all()
+    links = rep.list_links(db)
+    return _template_response("fanvue.html", {
+        "request": request, "days": days, "report": report, "report_error": report_error, "money": rep.money,
+        "links": links, "bio_names": dict(rep.BIO_LINKS), "link_platforms": ("instagram", "tiktok", "other"),
+        "posts": posts, "flash": get_flash(request),
+    })
+
+
+@router.post("/fanvue/links/bio")
+def fanvue_bio_links(db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import fanvue_report as rep
+
+    try:
+        rep.ensure_bio_links(db, http)
+    except AppError as e:
+        return redirect_with_flash("/fanvue", e.message, "error")
+    return redirect_with_flash("/fanvue", "Bio links ready - copy each one into Summer's Instagram / TikTok bio.")
+
+
+@router.post("/fanvue/links")
+def fanvue_create_link(name: str = Form(""), platform: str = Form("instagram"), db: Session = Depends(get_db),
+                       http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import fanvue_report as rep
+
+    try:
+        link = rep.create_link(db, http, name, platform)
+    except AppError as e:
+        return redirect_with_flash("/fanvue", e.message, "error")
+    return redirect_with_flash("/fanvue", f"Link '{link.name}' created.")

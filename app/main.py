@@ -265,6 +265,7 @@ def create_app() -> FastAPI:
     app.include_router(publishing_api.router, prefix="/api/v1")
     app.include_router(engagement_api.router, prefix="/api/v1")
     app.include_router(fans_api.router, prefix="/api/v1")
+    app.include_router(fans_api.fanvue_router, prefix="/api/v1")
     app.include_router(accounts_api.oauth_router)
     app.include_router(media_public.router)
     app.include_router(web_routes.router)
