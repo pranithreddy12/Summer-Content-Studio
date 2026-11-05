@@ -91,3 +91,39 @@ TikTok: v2 authorize scope separator/PKCE · token + refresh request/response ·
 
 ## Dropbox / rclone (docs/DEPLOY.md, PLATFORM_SETUP.md) - checked 2026-10-23
 rclone's Dropbox page: `rclone config` -> `dropbox`; empty key/secret = rclone's shared app; own app needs redirect `http://localhost:53682/`; its own-app scope list names file **write** as the minimum - a read-only scope set for download-only `rclone copy` is **UNVERIFIED** (try read-only first, widen only if rclone refuses). The page does not document `--min-size` or `copy` semantics (general rclone knowledge: `copy` never deletes at the destination) - both **UNVERIFIED** here, proven in L5.
+
+---
+
+## Fanvue (PLAN_PHASE3 rule P3-1) - checked 2026-11-06
+
+Sources: `https://api.fanvue.com/docs/openapi-v1.json` (spec `info.version` 0.1, server `https://api.fanvue.com`) and the guides `authentication/implementation-guide`, `get-started/build-your-first-app`, `get-started/choose-your-app-type`, `get-started/test-your-app`, `authentication/scopes`, `authentication/rate-limits`, `versions/overview`, `tutorials/uploading-media`, `tutorials/automated-replies`, `tutorials/tracking-links`. Everything below is **VERIFIED-DOC** unless marked.
+
+| Item | Value | Status |
+|---|---|---|
+| Every request | `Authorization: Bearer <access>`, `X-Fanvue-API-Version: 2025-06-26` (header missing = default, unknown = 400, sunset = 410 with `nextVersion`); paths under `/v1/` | VERIFIED-DOC |
+| App | Developer Area `https://www.fanvue.com/dev`, type **API only** (no listing, no review), creator account with verified email; client secret shown once | VERIFIED-DOC |
+| Authorize | `GET https://auth.fanvue.com/oauth2/auth?client_id&response_type=code&redirect_uri&scope&state&code_challenge&code_challenge_method=S256`; scope string space-separated, always includes `openid offline_access offline`; redirect must be `https://` (or http on localhost) and registered exactly | VERIFIED-DOC |
+| Token | `POST https://auth.fanvue.com/oauth2/token`, form `grant_type=authorization_code, code, redirect_uri, code_verifier`; **client id/secret only as HTTP Basic** (`client_secret_basic`; body credentials -> `invalid_client`) -> `access_token, refresh_token, id_token, token_type=Bearer, expires_in, scope` | VERIFIED-DOC (`expires_in` shown as a placeholder: parse with `int()`) |
+| Refresh | same URL + Basic header, form `grant_type=refresh_token, refresh_token` -> new access **and** new refresh token. Refresh tokens are single-use, rotate every time, reuse is detected -> persist both before use | VERIFIED-DOC |
+| Granted scopes | response `scope` may be narrower than requested; store it | VERIFIED-DOC |
+| Scopes requested | `read:self read:creator read:post write:post read:media write:media read:chat write:chat read:fan read:insights read:tracking_links write:tracking_links` (never `write:creator`) | names VERIFIED-DOC |
+| Rate limit | 200 points/60 s per user per OAuth client, 6 requests in flight; headers `X-RateLimit-Limit/Remaining/Reset`; `429`/`503` carry `Retry-After` | VERIFIED-DOC |
+| Sandbox | none - every call is live | VERIFIED-DOC |
+| Me | `GET /v1/users/me` -> `uuid, handle, displayName, isCreator, isAiCreator, email, fanCounts{followersCount, subscribersCount}, …`. Store `uuid` + `handle` only (never `email`) | VERIFIED-DOC |
+| Upload 1 | `POST /v1/media/uploads {name, filename, mediaType: image\|video\|audio\|document, sizeBytes}` -> `{mediaUuid, uploadId, partSize, maxParts, totalParts}`; max 1.5 GiB | VERIFIED-DOC |
+| Upload 2 | `GET /v1/media/uploads/{uploadId}/parts/urls?from=1&to=N` -> `{partSize, parts[{partNumber, url}]}` | VERIFIED-DOC |
+| Upload 3 | `PUT <url>` raw bytes, **no** Authorization header; keep response header `ETag` | VERIFIED-DOC |
+| Upload 4 | `PATCH /v1/media/uploads/{uploadId} {parts[{PartNumber, ETag}]}` (capitalised keys) -> `{status}` (`processing` expected) | VERIFIED-DOC |
+| Upload 5 | `GET /v1/media/{uuid}` -> `status: created\|processing\|ready\|error`, `errorReason: unsupported_format\|video_too_long\|…\|processing_failed` | VERIFIED-DOC; poll interval not specified (we use 5 s, max 10 min) |
+| Create post | `POST /v1/posts {text, mediaUuids[], mediaPreviewUuid, price (cents, needs media), audience: subscribers\|followers-and-subscribers (required), publishAt, expiresAt, collectionUuids}` -> `201 {uuid, createdAt, text, price, audience, publishAt, publishedAt, expiresAt}` | VERIFIED-DOC; whether `publishedAt` is set immediately when `publishAt` is omitted is **UNVERIFIED** (fall back to `createdAt`) |
+| Get/list posts | `GET /v1/posts/{uuid}`; `GET /v1/posts?cursor&size&includeUnpublished&startDate&endDate` -> `data[{uuid, mediaUuids[], likesCount, commentsCount, tips, publishedAt, …}], nextCursor` | VERIFIED-DOC; shape of `tips` object **UNVERIFIED** (store as-is) |
+| Chats | `GET /v1/chats?filter=not_answered&cursor&size` (filter is a repeatable enum incl. `unread`, `not_answered`) -> `data[{user{uuid, handle, displayName}, unreadMessagesCount, lastMessageAt, isRead}], nextCursor` | VERIFIED-DOC; exact meaning of `not_answered` (fan spoke last) **UNVERIFIED** - prove in L9, fall back to `unread` |
+| Messages | `GET /v1/chats/{userUuid}/messages?limit=1..50&markAsRead=false` -> `data[{uuid, text, sentAt, sender{uuid, handle}, type, status: SENT\|UNSENT\|MODERATED}]`, newest first; `type` values include `AUTOMATED_*`, `BROADCAST`, `TIP`, `SINGLE_RECIPIENT` | VERIFIED-DOC |
+| Send | `POST /v1/chats/{userUuid}/message {text, mediaUuids[], mediaPreviewUuid, price}` -> `201 {messageUuid}`; with `price` + media it is pay-to-view | VERIFIED-DOC |
+| Tracking links | `POST /v1/tracking-links {name, externalSocialPlatform: instagram\|tiktok\|…}` -> `{uuid, name, linkUrl, clicks, engagement{acquiredSubscribers, acquiredFollowers, …}, earnings{totalGross, totalNet} \| null}` (USD cents); `GET /v1/tracking-links?limit&cursor` same items in `data[]` | VERIFIED-DOC |
+| Earnings | `GET /v1/insights/earnings/summary?startDate&endDate&granularity=day\|week&timezone` -> `totals{allTime, thisMonth}, breakdownBySource{subs, messages, posts, tips, referrals, renewals, other}, overTime[], period{…}` | VERIFIED-DOC; inner fields of each source object **UNVERIFIED** (render gross/net only when present) |
+| Subscribers | `GET /v1/insights/subscribers?startDate&endDate&cursor&size` -> `data[{date, total, newSubscribersCount, cancelledSubscribersCount}]` | VERIFIED-DOC |
+
+Error mapping used by `app/platforms/fanvue.py` (same codes as the table above): 401 -> `token_expired`; 403 -> `missing_scope` (new code, non-transient); 410 -> `api_version_sunset` (new code, non-transient); 429/503 -> `rate_limited` (transient, honour `Retry-After` up to 120 s); ≥500 -> `upstream_error`; media `error` -> `media_rejected`; other 4xx -> `bad_request`.
+
+Live checklist (Fanvue, L7-L9): token `expires_in` real value · `publishedAt` when published immediately · `tips` and earnings source object shapes · `not_answered` semantics · an `out` message sent by the app shows our `appUuid` · PPV message as seen by a test fan.

@@ -233,3 +233,11 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Basis:** Fanvue's official API docs + `openapi-v1.json` and Community Guidelines, checked 2026-11-06 (summary table in PLAN_PHASE3 §0); Lee's H1/H2 answers. H3-H10 were never put to Lee, so the plan states defaults marked CONFIRM.
 **Scope:** Fanvue posting, tracking links for IG/TikTok bios, fan inbox with AI-drafted human-sent replies + PPV, weekly report. Offline milestones C0-C6, live L7-L10.
 **Next:** C0 (API notes + decisions) when the user says go; send Lee the short H3/H5/H6/H7 question list and the Fanvue developer-app steps (PLAN_PHASE3 §13).
+
+
+## Phase 3 - C0 API notes and decisions (2026-11-06)
+**Files changed:** `docs/PLATFORM_API_NOTES.md` (new Fanvue section: every call in PLAN_PHASE3 §6-§10 with method, path, fields, status and a live checklist), `docs/DECISIONS.md` (Phase 3 defaults for H3-H10, polling vs webhooks, worker-only token refresh, auto-send gate), `PLAN_PHASE3.md` v1.1.
+**Found while reading the spec (plan corrected):** the token endpoint needs the client id/secret as an HTTP Basic header (`client_secret_basic`), not in the form body; the inbox should use `filter=not_answered` (fan spoke last) rather than `unread`; v1 message paging is `limit` (1-50); the upload completion body uses capitalised `PartNumber`/`ETag`; `/users/me` returns `email`, which we will not store.
+**Tests:** no code changed; full suite **521 passed** (0 failed); `/health` 200.
+**Unverified (live checklist):** real `expires_in`, `publishedAt` on immediate posts, `tips`/earnings-source object shapes, `not_answered` semantics, PPV as seen by a fan.
+**Next:** C1 - config, enums, migration 0004, `fanvue_only` rule, Fanvue caption rule, seeded inactive posting rule.

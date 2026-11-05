@@ -9,6 +9,7 @@
 ### Changelog
 | Version | Date | Change |
 |---|---|---|
+| v1.1 | 2026-11-06 | C0 spec read: token auth is `client_secret_basic`; inbox uses `filter=not_answered`; messages page with `limit`. |
 | v1 | 2026-11-06 | First Phase 3 plan. Built on a check of Fanvue's official API docs and OpenAPI spec (2026-11-06), Fanvue's Community Guidelines, and Lee's H1/H2 answers. H3–H10 were never answered (the requirements doc he received ended at H2), so this plan states defaults for each and marks them ⚠ CONFIRM. |
 
 ---
@@ -59,7 +60,7 @@ These facts replace the "unverified" notes in memory and in `dist/Summer-AI-Phas
 - **P3-1 Verify before you call.** Every Fanvue call gets a row in `docs/PLATFORM_API_NOTES.md` (method, path, fields used, doc URL, date checked) taken from `https://api.fanvue.com/docs/openapi-v1.json`. Fields not in the spec are marked UNVERIFIED and must not drive status changes.
 - **P3-2 Never call Fanvue from tests.** `tests/conftest.py` blanks `FANVUE_CLIENT_ID` and `FANVUE_CLIENT_SECRET`. All tests use `httpx.MockTransport`. Fanvue has no sandbox, so every live call is real.
 - **P3-3 Human approval stays mandatory.** Posts publish only after approval, as in Phase 2. Fan replies and PPV messages are sent only when Lee presses Send. The AI never sets a price, never sends, and never answers escalation topics.
-- **P3-4 No webhooks, no new public endpoints.** One creator with a modest chat volume: the worker polls `GET /v1/chats?filter=unread` every `FANVUE_INBOX_POLL_SECONDS=120`. That is about 30 requests per hour against a 200/min budget. `# ponytail: polling; switch to creator.message.received webhooks if chat volume makes the poll + per-chat fetches exceed ~20 req/min.`
+- **P3-4 No webhooks, no new public endpoints.** One creator with a modest chat volume: the worker polls `GET /v1/chats?filter=not_answered` every `FANVUE_INBOX_POLL_SECONDS=120`. That is about 30 requests per hour against a 200/min budget. `# ponytail: polling; switch to creator.message.received webhooks if chat volume makes the poll + per-chat fetches exceed ~20 req/min.`
 - **P3-5 Only the worker refreshes Fanvue tokens.** Refresh tokens rotate with reuse detection, and the web and worker are separate processes, so two refreshes racing would revoke the connection. Web handlers call `accounts.get_valid_token(..., allow_refresh=False)`. If the token is expired, they return `503 worker_not_running`. The worker refreshes when fewer than 15 minutes remain.
 - **P3-6 No new dependencies.** Use httpx, hashlib/base64/secrets for PKCE, and the existing Fernet tokens.
 - **P3-7 Contradiction with PLAN_PHASE2 §20:** "Fanvue anything" and "DMs" were out of scope in Phase 2. They are in scope here, but **only for Fanvue**. Instagram/TikTok DMs stay out.
@@ -140,14 +141,14 @@ The docstring carries the doc URLs and "checked 2026-11-06". Every request goes 
 | Function | Behaviour |
 |---|---|
 | `authorize_url(settings, state, code_challenge)` | S256 challenge, `response_type=code`, scopes from config + system scopes. `start_oauth` stores the verifier in `oauth_states.code_verifier` for `fanvue`. |
-| `exchange_code(http, settings, code, code_verifier)` | POST form to the token URL with client id/secret. Then `GET /v1/users/me` for `uuid` → `external_user_id` and `handle` → `username`. `expires_at = now + expires_in`. |
-| `refresh(http, settings, account)` | `grant_type=refresh_token`. Returns **both** new tokens; `_store` persists them and commits **before** returning. A `400 invalid_grant` raises `PlatformError("revoked", transient=False)`, so `mark_attention` sends a push. |
+| `exchange_code(http, settings, code, code_verifier)` | POST form `grant_type, code, redirect_uri, code_verifier` to the token URL; client id/secret go **only** in an HTTP Basic header (`client_secret_basic`; secrets in the body → `invalid_client`). Then `GET /v1/users/me` for `uuid` → `external_user_id` and `handle` → `username`. `expires_at = now + expires_in`. |
+| `refresh(http, settings, account)` | Basic header + form `grant_type=refresh_token, refresh_token`. Returns **both** new tokens; `_store` persists them and commits **before** returning. A `400 invalid_grant` raises `PlatformError("revoked", transient=False)`, so `mark_attention` sends a push. |
 | `upload_media(http, token, asset_path, mime) -> str` | The 5-step multipart flow from §0. Upload parts sequentially (6-in-flight cap). Poll every 5 s up to 10 min. `error` → `PlatformError("media_rejected", transient=False)`. Timeout → transient. |
 | `publish(http, token, external_user_id, post, media_url, media_path, on_ref=None, caption=None)` | Reuse `asset.fanvue_media_uuid` if set; else upload and save it (call `on_ref("media:"+uuid)` first). Then `POST /v1/posts {text: caption, mediaUuids: [uuid], audience, price?}`. Return `PublishResult(external_post_id=uuid, external_url=None, published_at=publishedAt or createdAt, platform_ref=uuid)`. **Never** send `publishAt`; our worker owns timing. |
 | `check_status(http, token, uid, platform_ref)` | Stuck-claim recovery. If the ref is a post uuid → `GET /v1/posts/{uuid}`. If the ref is `media:<uuid>` → `GET /v1/posts?startDate=<claim time − 5 min>` and look for a post whose `mediaUuids` contains it. Found → `PublishResult`; else `None`, so the retry creates the post without re-uploading. |
 | `fetch_metrics(...)` | From `GET /v1/posts/{uuid}`: `{likes: likesCount, comments: commentsCount, tips: tips}`. Stored via the existing `post_metrics`. |
 | `fetch_comments` / `send_reply` | `PlatformError("unsupported")` in Phase 3 (Fanvue post comments: later if Lee asks). |
-| Inbox helpers | `list_unread_chats(http, token)` (follow `nextCursor`, max 5 pages), `get_messages(http, token, fan_uuid, limit=20)` with `markAsRead=false`, `send_message(http, token, fan_uuid, text, media_uuids=None, price=None) -> str`. |
+| Inbox helpers | `list_unread_chats(http, token)` (follow `nextCursor`, max 5 pages), `get_messages(http, token, fan_uuid, limit=20)` with `markAsRead=false` (v1 param is `limit`, 1–50), `send_message(http, token, fan_uuid, text, media_uuids=None, price=None) -> str`. |
 | Link/insight helpers | `create_tracking_link(name, platform)`, `list_tracking_links()`, `earnings_summary(start, end, tz)`, `subscriber_events(start, end)`. |
 
 **Error mapping:** 401 → `expired` (worker refreshes once, then `mark_attention`); 403 → `missing_scope` (non-transient, push: "reconnect Fanvue and tick the scope"); 410 → `api_version_sunset` (non-transient, push); 429/503 → transient, honour `Retry-After` (capped at 120 s inside a call, else backoff); 5xx/timeouts → transient.
@@ -174,7 +175,7 @@ The docstring carries the doc URLs and "checked 2026-11-06". Every request goes 
 ## 8. Fan inbox `services/fan_inbox.py` (F3 + F4)
 
 **Sync (worker stage `fan_inbox_stage`, every `FANVUE_INBOX_POLL_SECONDS`, live mode only, one failure never stops the loop):**
-1. `list_unread_chats`. For each chat: upsert `fan_chats` (uuid, handle, display name, unread count, last_message_at).
+1. `list_unread_chats` (`GET /v1/chats?filter=not_answered`: chats where the fan spoke last, even if Lee already read them on his phone). For each chat: upsert `fan_chats` (uuid, handle, display name, unread count, last_message_at).
 2. `get_messages(limit=20, markAsRead=false)` → insert new `fan_messages` by `fanvue_message_uuid` (dedupe). `direction = "out"` when `sender.uuid == account.external_user_id`. Skip `type` values starting with `AUTOMATED_` and `BROADCAST` as triggers (still stored).
 3. If the newest stored message is from the fan and the chat is not `escalated`/`ignored` → `status = needs_reply`.
 4. **Escalation check (pure function `needs_escalation(text, rules) -> str | None`, runs before any AI call):** case-insensitive keyword match on `rules.escalate_topics` **plus fixed safety defaults that can't be removed**: age/minor words, "are you real" / "are you a bot" / "are you ai" / "real person", meeting in person / address / phone number, refund / chargeback / dispute, self-harm words, legal threats. On a hit: `status = escalated`, `escalation_reason` set, **no draft**, push "Fan @handle needs you: <reason>".

@@ -164,3 +164,21 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 - Privacy Policy, Terms and the landing page are **static files on the apex domain, served by Caddy** from `/var/www/summer-site`, deliberately outside the app: no login, no cookies, no scripts, strict CSP. The app keeps no `/privacy` or `/terms` routes (tested) so nothing there can be exposed by mistake.
 - Texts are **drafts with explicit `[[PLACEHOLDERS]]`** that a test pins to the documented list; a visible placeholder is safer than invented legal details. Whoever operates the service decides the legal name, contact address, deletion promise and governing law.
 - Policy statements are tied to the code where possible (named processors, the 14-day backup rotation) so a change in one without the other fails a test.
+
+## Phase 3 C0 decisions (2026-11-06)
+Defaults used until Lee answers H3-H10 (his requirements doc ended at H2). Each is a setting or data row, so changing it later is not a rebuild.
+- **H3 AI messaging:** Fanvue's Community Guidelines allow AI-generated media with clear disclosure and say nothing about automated messaging; Fanvue publishes an official "Reply to unread chats automatically" tutorial. Still: **replies are AI-drafted and human-sent.** The Acceptable Use Policy has not been read.
+- **H4 order:** posting -> bio tracking links -> fan inbox -> PPV in replies -> weekly report. Fan grouping, mass messages, promotions, free-trial links and prices are left to Fanvue's own app.
+- **H5 escalation:** a fixed safety list that the client cannot remove (age/minor, "are you real/AI/a bot", meeting/address/phone, refund/chargeback/dispute, self-harm, legal threats) plus Lee's own topics. An escalated chat gets no AI draft, only a push to Lee.
+- **H6 PPV price:** Lee types it; it must be between `FANVUE_PPV_MIN_CENTS` and `FANVUE_PPV_MAX_CENTS` (300-5000). The AI never proposes a price.
+- **H7 Fanvue-only media:** `media_assets.fanvue_only`, refused for Instagram/TikTok at approve and at publish.
+- **H8 data:** UK GDPR assumed; store fan uuid, handle, display name and message text only; message text deleted after `FAN_DATA_RETENTION_DAYS=90`. `/users/me` `email` is never stored.
+- **H9 report:** weekly Telegram digest (Monday 09:00 Europe/London) + `/fanvue` page fetched live, nothing stored.
+- **H10 payments:** no `write:creator` scope, so the app cannot change prices, promotions or payouts.
+- **Fanvue posts:** need media; caption without hashtags; same hard 08:00-21:00 window; own posting rule (inactive), never mirrored with IG/TikTok; our worker owns timing (`publishAt` never sent).
+- **Inbox by polling, not webhooks:** one creator, `GET /v1/chats?filter=not_answered` every 120 s, about 30 requests per hour against a 200/min budget, and no new public endpoint. Webhooks only if volume makes polling cost more than ~20 req/min.
+- **Only the worker refreshes Fanvue tokens:** refresh tokens rotate with reuse detection and web + worker are separate processes; a race would revoke the connection. The web side reads the token and answers `503 worker_not_running` if it has expired.
+- **Bio-link attribution is per link, not per post:** an Instagram/TikTok bio holds one link. Whether those platforms down-rank links to subscription sites is unverified; Lee decides where to paste them.
+
+### Auto-send of fan replies: designed, not built (PLAN_PHASE3 §9)
+Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts have been sent with no more than 10 % heavily edited. Then `FANVUE_AUTO_REPLY=off|safe`: `safe` sends drafts only for non-escalated, text-only chats, after a 10-minute delay, inside the posting window. PPV is never automatic. Why wait: the risks are account-level (misleading fans about who replies, replying to things a human must handle), and Fanvue has no sandbox to try it safely.
