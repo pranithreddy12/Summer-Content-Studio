@@ -82,9 +82,9 @@ def callback_url(settings, platform: str) -> str:
 
 
 def publisher(platform: str):
-    """The platform module for 'instagram' / 'tiktok' (lazy: the modules import this package)."""
+    """The platform module for 'instagram' / 'tiktok' / 'fanvue' (lazy: the modules import this package)."""
     import importlib
 
-    if platform not in ("instagram", "tiktok"):
+    if platform not in ("instagram", "tiktok", "fanvue"):
         raise PlatformError("unsupported", f"No publisher for platform '{platform}'.", False)
     return importlib.import_module(f"app.platforms.{platform}")

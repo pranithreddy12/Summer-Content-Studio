@@ -61,7 +61,7 @@ These facts replace the "unverified" notes in memory and in `dist/Summer-AI-Phas
 - **P3-2 Never call Fanvue from tests.** `tests/conftest.py` blanks `FANVUE_CLIENT_ID` and `FANVUE_CLIENT_SECRET`. All tests use `httpx.MockTransport`. Fanvue has no sandbox, so every live call is real.
 - **P3-3 Human approval stays mandatory.** Posts publish only after approval, as in Phase 2. Fan replies and PPV messages are sent only when Lee presses Send. The AI never sets a price, never sends, and never answers escalation topics.
 - **P3-4 No webhooks, no new public endpoints.** One creator with a modest chat volume: the worker polls `GET /v1/chats?filter=not_answered` every `FANVUE_INBOX_POLL_SECONDS=120`. That is about 30 requests per hour against a 200/min budget. `# ponytail: polling; switch to creator.message.received webhooks if chat volume makes the poll + per-chat fetches exceed ~20 req/min.`
-- **P3-5 Only the worker refreshes Fanvue tokens.** Refresh tokens rotate with reuse detection, and the web and worker are separate processes, so two refreshes racing would revoke the connection. Web handlers call `accounts.get_valid_token(..., allow_refresh=False)`. If the token is expired, they return `503 worker_not_running`. The worker refreshes when fewer than 15 minutes remain.
+- **P3-5 Only the worker refreshes Fanvue tokens.** Refresh tokens rotate with reuse detection, and the web and worker are separate processes, so two refreshes racing would revoke the connection. `python -m app.cli worker` sets `accounts.is_worker = True`; everywhere else `get_valid_token` uses a still-valid Fanvue token as-is and raises the transient `worker_not_running` once it has expired. The worker's refresh stage refreshes when fewer than 20 minutes remain (retry every 2 min); `cli refresh-tokens` skips Fanvue.
 - **P3-6 No new dependencies.** Use httpx, hashlib/base64/secrets for PKCE, and the existing Fernet tokens.
 - **P3-7 Contradiction with PLAN_PHASE2 §20:** "Fanvue anything" and "DMs" were out of scope in Phase 2. They are in scope here, but **only for Fanvue**. Instagram/TikTok DMs stay out.
 
@@ -251,7 +251,7 @@ GET  /fanvue/summary?days=7|30
 |---|---|---|
 | C0 | Notes first: write the Fanvue rows of `PLATFORM_API_NOTES.md` from `openapi-v1.json` (P3-1); record §0 defaults and §9 in `DECISIONS.md`. | Every endpoint in §6–§10 has a row |
 | C1 | Config, enums, migration 0004, `fanvue_only` rule (pre-flight + approve), caption rule, seed rule | `test_phase3_rules.py` + migration test pass |
-| C2 | `platforms/fanvue.py` OAuth + refresh + upload + publish + check_status; accounts card; `allow_refresh=False` | `test_platform_fanvue.py` passes; dry_run worker "would publish" a Fanvue post with 0 HTTP |
+| C2 | `platforms/fanvue.py` OAuth + refresh + upload + publish + check_status; accounts card; worker-only refresh (`accounts.is_worker`); Fanvue price/audience pre-flight | `test_platform_fanvue.py` passes; dry_run worker "would publish" a Fanvue post with 0 HTTP |
 | C3 | Fan inbox sync + escalation + drafts + send + PPV + retention; worker stage | `test_fan_inbox.py` passes |
 | C4 | Dashboard `/fans`, `/fans/{id}`, Fanvue-only checkbox, post-detail Fanvue fields | Route tests pass; 375 px check recorded |
 | C5 | Links + report page + weekly digest | `test_fanvue_report.py` passes |

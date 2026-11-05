@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import publishing_mode
+from app.config import get_settings, publishing_mode
 from app.db import utcnow
 from app.models import ContentPost, PlatformAccount, AccountStatus, StorageType
 from app.services import AppError
@@ -81,6 +81,24 @@ def asset_is_publishable(post: ContentPost) -> tuple[bool, Optional[str]]:
     return True, None
 
 
+FANVUE_AUDIENCES = ("subscribers", "followers-and-subscribers")
+
+
+def fanvue_offer_problem(post: ContentPost) -> Optional[str]:
+    """Fanvue audience/price rules (PLAN_PHASE3 §6, H6). None when fine or not a Fanvue post."""
+    if post.platform != "fanvue":
+        return None
+    if post.fanvue_audience not in (None, *FANVUE_AUDIENCES):
+        return "audience must be 'subscribers' or 'followers-and-subscribers'"
+    price = post.fanvue_price_cents
+    if price is not None:
+        s = get_settings()
+        if not s.FANVUE_PPV_MIN_CENTS <= price <= s.FANVUE_PPV_MAX_CENTS:
+            return (f"price must be between {s.FANVUE_PPV_MIN_CENTS / 100:.2f} and "
+                    f"{s.FANVUE_PPV_MAX_CENTS / 100:.2f}")
+    return None
+
+
 def preflight_reasons(db: Session, post: ContentPost, now: Optional[datetime] = None) -> list[str]:
     """Human-readable publish-pre-flight reasons (shown in the dashboard)."""
     reasons: list[str] = []
@@ -94,6 +112,9 @@ def preflight_reasons(db: Session, post: ContentPost, now: Optional[datetime] = 
             reasons.append("media_not_publishable: external-url media cannot be served to the platform")
         elif not ok and code == "fanvue_only_media":
             reasons.append("fanvue_only_media: this media is marked Fanvue-only; pick another asset")
+    offer = fanvue_offer_problem(post)
+    if offer:
+        reasons.append(f"invalid_fanvue_offer: {offer}")
     if publishing_mode() == "live" and connected_account(db, post.model_profile_id, post.platform) is None:
         reasons.append("account_not_connected: connect the account on the Accounts page")
     if post.caption and len(render_caption(post)) > MAX_CAPTION_LENGTH:
@@ -124,6 +145,9 @@ def check_publishable(
         raise AppError(code, "Media is not publishable.", status=409)
     if len(render_caption(post)) > MAX_CAPTION_LENGTH:  # what is actually sent: caption + hashtags
         raise AppError("caption_too_long", "Caption plus hashtags exceed the platform limit.", status=422)
+    offer = fanvue_offer_problem(post)
+    if offer:
+        raise AppError("invalid_fanvue_offer", f"Fanvue {offer}.", status=422)
     if publishing_mode() == "live" and connected_account(db, post.model_profile_id, post.platform) is None:
         raise AppError("account_not_connected", "No connected platform account.", status=409)
     if override_window:
@@ -157,7 +181,7 @@ def render_caption(post: ContentPost) -> str:
 import logging  # noqa: E402
 from datetime import timedelta  # noqa: E402
 
-from app.config import get_settings  # noqa: E402
+
 from app.models import PublishAttempt  # noqa: E402
 from app.platforms import PlatformError, http_client, publisher  # noqa: E402
 from app.services.window import clamp_to_window  # noqa: E402
@@ -313,7 +337,7 @@ STUCK_AFTER = timedelta(minutes=15)
 # Pre-flight problems that will not fix themselves: the worker fails the post (visible + push)
 # instead of skipping it silently every minute. (Window / status problems are NOT in this set.)
 PERSISTENT_PREFLIGHT = {"account_not_connected", "media_required", "media_not_publishable", "caption_too_long",
-                        "fanvue_only_media"}
+                        "fanvue_only_media", "invalid_fanvue_offer"}
 
 
 def fail_preflight(db: Session, post_id: int, e: AppError, now: datetime) -> ContentPost:

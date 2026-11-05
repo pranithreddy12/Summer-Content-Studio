@@ -144,6 +144,10 @@ def worker(once) -> None:
     import signal
     import threading
 
+    from app.services import accounts as _accounts
+
+    _accounts.is_worker = True  # the only process that refreshes rotating (Fanvue) tokens
+
     from app.platforms import http_client
     from app.services.scheduler import run_forever
 
@@ -200,6 +204,9 @@ def refresh_tokens(days) -> None:
         if not due:
             click.echo("Nothing to refresh.")
         for acct in due:
+            if acct.platform in accounts.WORKER_ONLY_REFRESH:
+                click.echo(f"{acct.platform} @{acct.username}: skipped - only the worker refreshes it")
+                continue
             try:
                 accounts.refresh_account(db, acct, http)
                 click.echo(f"{acct.platform} @{acct.username}: refreshed, now expires {acct.token_expires_at:%Y-%m-%d}")

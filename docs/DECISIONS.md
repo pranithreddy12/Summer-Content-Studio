@@ -188,3 +188,10 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **Seeded Fanvue rule is 7/week, 1/day, inactive** (the plan said 3/week): the existing planner validator requires at least one post per day. Lee changes it when he sets a cadence.
 - **Downgrading 0004 keeps any `platform='fanvue'` posts**; it only removes the seeded Fanvue rule and the new tables/columns. A downgrade should not delete user content.
 - **Fanvue captions:** no hashtags (prompt rule + hashtag cap 0 + `render_caption` sends the caption only).
+
+## Phase 3 C2 decisions (2026-11-06)
+- **Worker-only refresh is a process flag, not a parameter:** `cli worker` sets `accounts.is_worker = True`. Every other caller (Publish now, Send reply, future web routes) is safe without remembering a flag. Outside the worker an expiring Fanvue token is used while still valid; an expired one raises the transient `worker_not_running` (the post retries later). Fanvue's refresh window is 20 minutes with a 2-minute retry, because its access tokens are short-lived (docs example: 1 hour).
+- **Rejected refresh (`invalid_grant`, reuse detected) = `token_expired`**: the existing path marks the account expired and pushes once a day; Lee reconnects.
+- **Crash safety for Fanvue posts:** the media is uploaded once and its uuid is stored on the asset (committed with the attempt's `media:<uuid>@<time>` ref) before `POST /v1/posts`. A retry or stuck-claim check first lists recent posts for that media uuid, so the upload is never repeated and the post is never created twice. Ceiling: the match is media uuid + time, not caption (`ponytail:` note in `check_status`).
+- **In-call `Retry-After`:** one retry when Fanvue's 429/503 asks for at most 120 s; longer waits go to the normal 5/15/60-minute backoff.
+- **Fanvue posts need an image or video** (text-only posts are not built). Audience defaults to `subscribers`; a price must be inside the PPV range or the post fails pre-flight as `invalid_fanvue_offer` (persistent: fails visibly).

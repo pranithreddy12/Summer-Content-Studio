@@ -6,6 +6,8 @@ never in exception messages. OAuth `state` is random, single-use and expires aft
 10 minutes; redirect URIs are built only from PUBLIC_BASE_URL.
 """
 
+import base64
+import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -24,7 +26,14 @@ from app.services import AppError
 
 logger = logging.getLogger("app.services.accounts")
 
-PLATFORMS = ("instagram", "tiktok")
+PLATFORMS = ("instagram", "tiktok", "fanvue")
+PKCE_PLATFORMS = ("fanvue",)        # OAuth flows that require a code_verifier
+WORKER_ONLY_REFRESH = ("fanvue",)   # rotating refresh tokens with reuse detection (PLAN_PHASE3 P3-5)
+
+# True only inside `python -m app.cli worker`: the one process allowed to refresh rotating tokens.
+# A web request and the worker refreshing at the same moment would present the same single-use
+# refresh token twice, and Fanvue's reuse detection would revoke the connection.
+is_worker = False
 STATE_TTL = timedelta(minutes=10)
 REFRESH_SKEW = timedelta(minutes=5)  # refresh when less than this is left
 
@@ -32,6 +41,7 @@ REFRESH_SKEW = timedelta(minutes=5)  # refresh when less than this is left
 REQUIRED_ENV = {
     "instagram": ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"),
     "tiktok": ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"),
+    "fanvue": ("FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET"),
 }
 COMMON_ENV = ("PUBLIC_BASE_URL", "TOKEN_ENCRYPTION_KEY")
 
@@ -127,9 +137,14 @@ def start_oauth(db: Session, platform: str, profile_id: int, now: Optional[datet
     now = now or utcnow()
     db.execute(delete(OAuthState).where(OAuthState.created_at < now - STATE_TTL))
     state = secrets.token_urlsafe(32)
-    db.add(OAuthState(state=state, platform=platform, model_profile_id=profile_id, code_verifier=None, created_at=now))
+    verifier = challenge = None
+    if platform in PKCE_PLATFORMS:  # RFC 7636 S256; the verifier never leaves the server
+        verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    db.add(OAuthState(state=state, platform=platform, model_profile_id=profile_id, code_verifier=verifier,
+                      created_at=now))
     db.commit()
-    return publisher(platform).authorize_url(settings, state, None)
+    return publisher(platform).authorize_url(settings, state, challenge)
 
 
 def complete_oauth(db: Session, platform: str, code: str, state: str, http,
@@ -140,6 +155,7 @@ def complete_oauth(db: Session, platform: str, code: str, state: str, http,
     row = db.get(OAuthState, state) if state else None
     valid = row is not None and row.platform == platform and now - row.created_at <= STATE_TTL
     profile_id = row.model_profile_id if row is not None else None
+    verifier = row.code_verifier if row is not None else None
     if row is not None:  # single use: burn it whether or not it was valid
         db.delete(row)
         db.commit()
@@ -148,9 +164,9 @@ def complete_oauth(db: Session, platform: str, code: str, state: str, http,
 
     settings = get_settings()
     try:
-        ts = publisher(platform).exchange_code(http, settings, code, None)
+        ts = publisher(platform).exchange_code(http, settings, code, verifier)
     except PlatformError as e:
-        raise AppError(e.code, sanitize(e.message, code), status=502 if e.transient else 400) from e
+        raise AppError(e.code, sanitize(e.message, code, verifier), status=502 if e.transient else 400) from e
 
     account = db.execute(select(PlatformAccount).where(
         PlatformAccount.model_profile_id == profile_id, PlatformAccount.platform == platform)).scalar_one_or_none()
@@ -206,12 +222,20 @@ def refresh_account(db: Session, account: PlatformAccount, http) -> PlatformAcco
 
 
 def get_valid_token(db: Session, account: PlatformAccount, http, now: Optional[datetime] = None) -> str:
-    """Decrypted access token, refreshed first when it expires within 5 minutes."""
+    """Decrypted access token, refreshed first when it expires within 5 minutes.
+
+    Fanvue tokens are refreshed only by the worker (`is_worker`); elsewhere a still-valid token is
+    used as-is and an expired one means the worker is not running."""
     now = now or utcnow()
     if account.status != AccountStatus.connected.value:
         raise PlatformError("account_not_connected", f"Account is {account.status}; reconnect it.", False)
     if account.token_expires_at and account.token_expires_at - now < REFRESH_SKEW:
-        refresh_account(db, account, http)
+        if account.platform in WORKER_ONLY_REFRESH and not is_worker:
+            if account.token_expires_at <= now:
+                raise PlatformError("worker_not_running", f"The {account.platform.title()} connection is kept fresh "
+                                    "by the worker, which seems to be stopped. Start it and try again.", True)
+        else:
+            refresh_account(db, account, http)
     return decrypt(account.access_token_enc)
 
 

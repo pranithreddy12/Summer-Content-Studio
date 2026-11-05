@@ -27,7 +27,8 @@ from app.models import ContentPost, PostStatus, PostingRule, WorkerHeartbeat
 
 logger = logging.getLogger("app.services.scheduler")
 
-REFRESH_WINDOW = {"instagram": timedelta(days=7), "tiktok": timedelta(hours=2)}  # TikTok access tokens live 24 h
+REFRESH_WINDOW = {"instagram": timedelta(days=7), "tiktok": timedelta(hours=2),  # TikTok access tokens live 24 h
+                  "fanvue": timedelta(minutes=20)}  # Fanvue: read expires_in (docs example ~1 h)
 REFRESH_RETRY = timedelta(minutes=30)
 _refresh_tried: dict[int, datetime] = {}  # ponytail: in-memory (one worker process); a restart simply retries once
 
@@ -226,7 +227,8 @@ def refresh_due_tokens(db, now: datetime, http) -> dict:
         if acct.token_expires_at - now > REFRESH_WINDOW.get(acct.platform, timedelta(days=7)):
             continue
         last = _refresh_tried.get(acct.id)
-        if last and now - last < REFRESH_RETRY:
+        retry = timedelta(minutes=2) if acct.platform in accounts.WORKER_ONLY_REFRESH else REFRESH_RETRY
+        if last and now - last < retry:
             continue
         _refresh_tried[acct.id] = now
         try:
