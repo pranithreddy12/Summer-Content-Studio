@@ -19,6 +19,7 @@ Everything else happens in your own browser by pressing **Allow** on the platfor
 | 4 | Instagram: Meta developer app | Lee (or developer, see 4b) | 30–60 min | posting to Instagram, comments |
 | 5 | TikTok developer app | Lee | 30 min + TikTok's review time **(unconfirmed)** | sending videos to TikTok drafts |
 | 6 | Dropbox → server copy | Lee approves once | 15 min | media library fills itself |
+| 7 | Fanvue developer app (Phase 3) | Lee | 15 min | Fanvue posts, fan inbox, bio links, earnings report |
 
 Do **1** first; the platforms need the server's web address. Do not wait for everything: the **reminder mode**
 (push notification at each slot, you post by hand and press *Mark as posted*) works with only items 1–3 — or
@@ -158,7 +159,44 @@ folder name (a folder called `Halloween` tags its files `halloween`).
 4. Tell us the **folder name** and roughly **how many files and how many GB** — the server disk is sized from that.
    The app refuses to sync when less than 2 GB is free and sends a push.
 
-## 7. Checklist to send back
+## 7. Fanvue (Phase 3)
+
+Checked against Fanvue's developer docs on 2026-11-06 (`https://api.fanvue.com/docs`). Fanvue has **no test mode**:
+everything the app does happens on Summer's real account, so the first real post and message are done together, with your OK.
+
+**What the app does on Fanvue:** posts approved content (subscribers only by default, optional unlock price), lists chats
+where a fan is waiting, drafts a reply with AI that **you** edit and send, lets you attach paid media to a reply (you set the
+price), makes tracking links for Summer's Instagram/TikTok bios, and shows earnings and new subscribers.
+**What it never does:** send a message by itself, set or change prices/promotions/subscription price, or touch payments
+or payouts (those stay entirely inside Fanvue). Messages that need a human (are you real, age, meeting, refunds, safety)
+get **no** AI draft; you get a push instead.
+
+**Steps (signed in to Fanvue as Summer's creator account):**
+1. Open `https://www.fanvue.com/dev` → **Create developer profile** (first visit only) → **Create app**, name it
+   `Summer Content`, press **Create**.
+2. App type: **API only** ("Basic OAuth for using our API"). This type needs no App Store listing and no review.
+3. Copy the **Client ID** and the **Client secret**. The secret is shown **once**: if you lose it, press
+   *Reset secret* on the Authentication tab and send the new one.
+4. **Authentication** tab: add the redirect URI exactly `https://studio.itsmesummer.app/oauth/fanvue/callback`, and tick
+   these scopes: `read:self`, `read:creator`, `read:post`, `write:post`, `read:media`, `write:media`, `read:chat`,
+   `write:chat`, `read:fan`, `read:insights`, `read:tracking_links`, `write:tracking_links`. Do **not** tick
+   `write:creator` (that would allow price changes; the app refuses to start with it).
+5. Send the Client ID + secret securely (not by plain e-mail). The developer puts them in `.env` as
+   `FANVUE_CLIENT_ID` / `FANVUE_CLIENT_SECRET`.
+6. On the dashboard: **Accounts → Connect Fanvue**, sign in, press **Allow**. The card then shows `@its_me_summer`.
+7. **Fanvue → Bio links:** press *Create bio links*, copy each link into Summer's Instagram and TikTok bio yourself.
+   Check each platform's rules on links to subscription sites first; the app never edits those profiles.
+
+**Answers we still need from you (defaults are already set and can be changed later):**
+- Fanvue's rules: if you know of any rule about AI creators or automated chat, send it. Default: you send every reply.
+- Things Summer must **never say** in chats, topics that must always come to you, and ~5 example fan messages with how
+  she would answer. Default: the safety list above.
+- Price range for paid media in chats. Default: 3.00 – 50.00 USD.
+- Which media is **Fanvue only** (never on Instagram/TikTok). Tick *Fanvue only* on each item's page.
+- Check that Summer's Fanvue **bio says clearly that she is AI-generated** (Fanvue's guidelines require a clear disclosure;
+  a bio statement is one of the accepted ways).
+
+## 8. Checklist to send back
 
 - [ ] Server rented, developer added · domain A record `studio.…` created
 - [ ] Anthropic key (+ credit, + spend limit)
@@ -166,5 +204,6 @@ folder name (a folder called `Halloween` tags its files `halloween`).
 - [ ] Meta app: App ID + secret, redirect URL added — or the exact error message
 - [ ] TikTok app: client key + secret, redirect URI added · date submitted for review (if asked)
 - [ ] Dropbox: folder name, file count, total GB, rclone token
+- [ ] Fanvue app: Client ID + secret, redirect URI added, scopes ticked (section 7) · AI disclosure in the Fanvue bio
 - [ ] Which time zone you mean by "GMT" (UK clock time, i.e. summer-time aware, or fixed GMT?) and whether the
       10 weekly posts are all videos (TikTok drafts accept videos only)

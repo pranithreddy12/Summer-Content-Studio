@@ -117,7 +117,7 @@ Change one thing at a time; restart `summer-web summer-worker` after each `.env`
 2. **Push channel:** set `NOTIFY_PROVIDER` + credentials (Telegram once Lee has the bot), then `python -m app.cli notify-test`; also *Accounts → Send test notification*.
 3. **`PUBLISHING_MODE=reminders`** (+ worker running): a push at each scheduled slot inside 08:00–21:00; Lee posts by hand and clicks *Mark as posted*. This is the safety net.
 4. **Planner:** activate the posting rules (Planner page) once the time zone and "all videos?" are confirmed; "Plan next 7 days"; later `AUTO_PLAN_ENABLED=true`.
-5. **Connect accounts** (Accounts page; Lee presses *Allow*): needs `PUBLIC_BASE_URL`, `TOKEN_ENCRYPTION_KEY`, `MEDIA_URL_SECRET` and `INSTAGRAM_APP_ID/SECRET` or `TIKTOK_CLIENT_KEY/SECRET`.
+5. **Connect accounts** (Accounts page; Lee presses *Allow*): needs `PUBLIC_BASE_URL`, `TOKEN_ENCRYPTION_KEY`, `MEDIA_URL_SECRET` and `INSTAGRAM_APP_ID/SECRET`, `TIKTOK_CLIENT_KEY/SECRET` or `FANVUE_CLIENT_ID/SECRET` (Fanvue: see `docs/PLATFORM_SETUP.md` §7; after an update run `python -m app.cli init-db` or `alembic upgrade head` for migration 0004).
 6. **`PUBLISHING_MODE=dry_run`** for a day: the worker logs "would publish" attempts and sends nothing to any platform. Check them.
 7. **`PUBLISHING_MODE=live`**: first publish one Lee-approved test post (Publish now, inside the window); record the permalink in `docs/LIVE_PROOF.md`. Then let the schedule run.
 8. **Kill switch:** `PUBLISHING_MODE=off` + restart stops all automation instantly.

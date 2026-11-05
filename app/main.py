@@ -64,7 +64,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Summer AI Content Automation",
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
         docs_url=docs_url,
         openapi_url="/openapi.json" if not locked_down else None,
@@ -247,7 +247,7 @@ def create_app() -> FastAPI:
             "publishing_mode": settings.PUBLISHING_MODE,
             "worker_last_seen": worker_last_seen,
             "worker_ok": worker_ok,
-            "version": "0.2.0",
+            "version": "0.3.0",
         }
 
     from app.api import profiles, assets, content, posts, tags, planner, notifications

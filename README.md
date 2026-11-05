@@ -91,8 +91,8 @@ python -m pytest
 
 ## Documentation
 - `docs/LIVE_PROOF.md` — real Instagram + TikTok drafts generated live (Mistral)
-- `docs/DEMO.md` — Halloween demo script (Phase 1 flow) · `docs/DEMO_PHASE2.md` — planner, reminders, dry run, live
-- `docs/PLATFORM_SETUP.md` — connect Instagram, TikTok, Telegram, Dropbox, Anthropic · `docs/DEPLOY.md` — server
+- `docs/DEMO.md` — Halloween demo script (Phase 1 flow) · `docs/DEMO_PHASE2.md` — planner, reminders, dry run, live · `docs/DEMO_PHASE3.md` — Fanvue
+- `docs/PLATFORM_SETUP.md` — connect Instagram, TikTok, Fanvue, Telegram, Dropbox, Anthropic · `docs/DEPLOY.md` — server
 - `docs/PLATFORM_API_NOTES.md` — what was verified in the official docs and what is still unproven
 - `docs/PROGRESS.md` — build log with real test results
 - `docs/DECISIONS.md` — Architecture decisions
@@ -146,6 +146,14 @@ With `APP_ENV=production` the app **refuses to start** unless `DASHBOARD_USERNAM
 Server ≈ a few euros to ~US$12 a month (+ backups), domain ≈ US$10–15 a year, Anthropic API = a few cents per caption (set a monthly limit);
 Telegram/ntfy, Meta, TikTok and Dropbox are free. Prices change — check when you buy.
 
+## Fanvue (Phase 3)
+Spec: `PLAN_PHASE3.md`. Connect on **Accounts** (setup: `docs/PLATFORM_SETUP.md` §7).
+- **Posts:** platform `fanvue`, type `fanvue_post`; no hashtags; *Who can see it* (subscribers by default) and an optional *Price to unlock* inside `FANVUE_PPV_MIN_CENTS`–`FANVUE_PPV_MAX_CENTS`. Same approval, window and worker as Instagram. Media is uploaded to Fanvue once and reused.
+- **Fanvue only:** tick it on a media item and it can never be attached to, approved for or published on Instagram/TikTok.
+- **Fans** page: chats where a fan spoke last (synced every `FANVUE_INBOX_POLL_SECONDS`). The AI drafts; **you edit and press Send**, optionally with paid media at a price you set. Chats about age, "are you real/AI", meeting, refunds, self-harm or legal threats (plus your own `fan_rules.escalate_topics`) get **no draft** and a push instead. Message text is deleted after `FAN_DATA_RETENTION_DAYS` (90).
+- **Fanvue** page: net earnings by source and subscriber changes (7/30 days, live from Fanvue, cached 10 minutes, never stored), bio and campaign tracking links with copy boxes, and a weekly Telegram digest (Monday 09:00 UK time).
+- Never requested: `write:creator` (prices, promotions, payouts stay in Fanvue). Only the worker refreshes the Fanvue connection.
+
 ## Random drafts from your library ("Surprise me")
 On the **Generate** page, the "Surprise me" card (or `POST /api/v1/content/generate-random`) picks random **unused** images/videos, shows them to the AI, and saves a draft for each (1-5 per click; the platform's content type is chosen from the media type; campaign "Auto" uses the asset's category tag, else Lifestyle). Nothing is published - you review and approve each draft.
 - It only uses **uploaded or synced files**. A Dropbox *share link* can't be listed or opened, so to draw from Dropbox: install the Dropbox desktop app (folder set to "Available offline") **or** download the Dropbox folder to your computer, then set `MEDIA_SYNC_DIR` to that folder in `.env` and click **Sync** in the Media Library. Sub-folders named like a campaign (e.g. `Halloween/`) auto-tag the files.
@@ -160,7 +168,7 @@ On the **Generate** page, the "Surprise me" card (or `POST /api/v1/content/gener
 - **Publishing needs the accounts and a server.** Until Instagram/TikTok are connected and `PUBLISHING_MODE=live`, use `reminders` or the manual workflow. The platform integrations are tested against mocks and the platforms' documentation (`docs/PLATFORM_API_NOTES.md` lists every unverified detail); **nothing has been posted to a real account yet** (live proof: `docs/LIVE_PROOF.md`).
 - **Instagram:** images must be **JPEG**; there is no API flag for the AI label (add it in the app); only API-published posts get metrics/comments.
 - **TikTok:** videos go to your **drafts** (you press Publish and add the AI label); photo posts and direct public posting are not supported (TikTok requires an audited app for the latter).
-- **X (Twitter) and Fanvue are not part of Phase 2.**
+- **Fanvue (Phase 3):** no sandbox exists, so nothing has been sent to a real Fanvue account yet; fan replies are **always sent by a person**; attribution is per bio/campaign link, not per post. X (Twitter) is not built.
 - **What the AI can see:** uploaded or synced images, and 3 frames from uploaded/synced videos (needs ffmpeg on PATH or `FFMPEG_PATH`). **Dropbox links can't be opened** - the server copies your Dropbox folder (see `docs/DEPLOY.md`) or you upload files. Frames are sent to your AI provider; `ENABLE_IMAGE_INPUT=false` turns this off.
 - **Review every draft.** Captions are AI output (check hashtags, tone, platform rules); apply platform AI-content labels when posting.
 - **Claude (Anthropic) live generation is unverified** (no funded key yet); Mistral was verified live (`docs/LIVE_PROOF.md`).

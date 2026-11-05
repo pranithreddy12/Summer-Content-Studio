@@ -36,40 +36,46 @@ social media posts. It is not a public service: there are no visitor accounts an
 Contact for anything in this policy: <b>[[CONTACT EMAIL]]</b>.</p>
 
 <h2>2. What the service does with your data</h2>
-<p>The creator connects her own Instagram and TikTok accounts by pressing "Allow" on Instagram's or TikTok's own login page. We never see or store a
-password for those platforms. The service then drafts captions with AI, schedules posts, uploads approved posts (Instagram) or finished videos (TikTok drafts),
-shows how a post is doing, and lists comments on her posts so she can reply to them herself.</p>
+<p>The creator connects her own Instagram, TikTok and Fanvue accounts by pressing "Allow" on each platform's own login page. We never see or store a
+password for those platforms. The service then drafts captions with AI, schedules posts, uploads approved posts (Instagram, Fanvue) or finished videos (TikTok drafts),
+shows how a post is doing, and lists comments on her posts so she can reply to them herself.
+On Fanvue it also lists private chats in which a fan is waiting for a reply, drafts a suggested reply with AI, and sends a reply only when the creator presses Send.
+It shows her Fanvue earnings and subscriber totals, read from Fanvue each time and not stored.</p>
 
 <h2>3. What data we handle</h2>
 <table>
 <tr><th>Data</th><th>Why</th></tr>
-<tr><td>Instagram / TikTok account name and ID, and an access token the platform gives us (stored encrypted)</td><td>to publish for the connected account and keep the connection working</td></tr>
+<tr><td>Instagram / TikTok / Fanvue account name and ID, and an access token the platform gives us (stored encrypted)</td><td>to publish for the connected account and keep the connection working</td></tr>
 <tr><td>The creator's content: captions, hashtags, photos and videos, descriptions she writes, planned posting times</td><td>to write, schedule and publish her posts</td></tr>
 <tr><td>Comments on her Instagram posts that are made available through Instagram's interface: the commenter's public username, the comment text and time</td><td>so she can read and answer them</td></tr>
 <tr><td>Post statistics from Instagram (for example like and comment counts)</td><td>to show how posts are doing</td></tr>
+<tr><td>Fanvue chats in which a fan is waiting for a reply: the fan's Fanvue ID, username and display name, and the text and time of recent messages (we do not store fans' e-mail addresses, payment details or other profile data)</td><td>so the creator can read and answer them</td></tr>
+<tr><td>Fanvue tracking links and their click, subscriber and earnings counts</td><td>to show which bio or campaign link brings subscribers</td></tr>
 <tr><td>Technical logs: time, requested page, result, error codes (access tokens are removed from logs)</td><td>to keep the service running and to find faults</td></tr>
 <tr><td>Delivery records of push notifications (event type and time, not the message text)</td><td>to avoid sending the same alert twice</td></tr>
 </table>
-<p>We do not collect data from visitors to these public pages beyond ordinary server logs. We do not sell data, run advertising, or build profiles of commenters.</p>
+<p>We do not collect data from visitors to these public pages beyond ordinary server logs. We do not sell data, run advertising, or build profiles of commenters or fans.</p>
 
 <h2>4. AI processing</h2>
-<p>To write drafts and suggested replies, text (the creator's brief, captions, and for reply drafts the text of a comment) and, if enabled, a few still images taken from her own
+<p>To write drafts and suggested replies, text (the creator's brief, captions, for reply drafts the text of a comment, and for Fanvue chat drafts the last few messages of that chat) and, if enabled, a few still images taken from her own
 photos and videos are sent to an AI provider: <b>Anthropic</b> and/or <b>Mistral AI</b>. They process it to produce the text and are not told to keep it for any other purpose of ours.
-A reply is only ever sent after the creator reads, edits and approves it. Every post is approved by a person before it is published.</p>
+A reply is only ever sent after the creator reads, edits and approves it. Every post is approved by a person before it is published.
+Messages that need a human (for example a question about whether the creator is real or AI, anything about age, meeting in person, payments or safety) get no AI draft at all.</p>
 
 <h2>5. Who else handles data (service providers)</h2>
 <ul>
-<li><b>Meta (Instagram)</b> and <b>TikTok</b> - the platforms the creator connects; their own privacy policies apply to what they hold.</li>
+<li><b>Meta (Instagram)</b>, <b>TikTok</b> and <b>Fanvue</b> - the platforms the creator connects; their own privacy policies apply to what they hold. Payments and payouts happen entirely inside Fanvue.</li>
 <li><b>DigitalOcean</b> - the server the service runs on, including its backups. <b>Cloudflare</b> - domain name service.</li>
 <li><b>Anthropic</b> and <b>Mistral AI</b> - AI text and image understanding (section 4).</li>
 <li><b>Dropbox</b> - the creator's media is copied from her own Dropbox folder to the server; nothing is changed or deleted in Dropbox.</li>
-<li><b>Telegram</b> or <b>ntfy</b> - push messages to the creator's phone, which can contain a caption or the start of a comment.</li>
+<li><b>Telegram</b> or <b>ntfy</b> - push messages to the creator's phone, which can contain a caption, the start of a comment, a fan's username, or earnings totals (never the text of a fan's private message).</li>
 </ul>
 
 <h2>6. How long we keep it</h2>
 <ul>
 <li>Access tokens: until the account is disconnected (the tokens are then deleted) or the service is closed.</li>
 <li>Posts, media, comments and statistics: until the creator or we delete them, or the service is closed.</li>
+<li>Fanvue chat messages: deleted automatically after 90 days. A chat with no stored messages left is deleted too.</li>
 <li>Server backups: nightly database copies for 14 days, and the hosting provider's snapshots on its own schedule.</li>
 </ul>
 
@@ -79,19 +85,19 @@ No system is perfectly secure; if we learn of a problem that affects your data w
 
 <h2>8. Your rights and choices</h2>
 <p>Depending on where you live (for example under the UK or EU GDPR) you may have the right to ask for a copy of your data, to correct it, to have it deleted, or to object to how it is used.
-If you are a person who commented on one of the creator's posts, write to <b>[[CONTACT EMAIL]]</b> and tell us the username and the post: we will delete the stored copy of your comment.
+If you are a person who commented on one of the creator's posts, or a fan who messaged her on Fanvue, write to <b>[[CONTACT EMAIL]]</b> and tell us your username: we will delete the stored copy of your comments or messages.
 You can also complain to your data protection authority.</p>
 
 <h2 id="data-deletion">9. Data deletion instructions</h2>
 <div class="box">
 <p><b>If you connected an account and want your data removed:</b></p>
 <ol>
-<li>Revoke access in the platform: on Instagram, <i>Settings → Apps and websites</i> (or the equivalent "Website permissions" page) and remove "Summer Content Studio"; on TikTok, <i>Settings and privacy → Security and permissions → Apps and services</i> (names can change) and remove it.
+<li>Revoke access in the platform: on Instagram, <i>Settings → Apps and websites</i> (or the equivalent "Website permissions" page) and remove "Summer Content Studio"; on TikTok, <i>Settings and privacy → Security and permissions → Apps and services</i>; on Fanvue, the connected-apps section of the account settings (names can change) and remove it.
 This stops the service from using your account immediately.</li>
 <li>Email <b>[[CONTACT EMAIL]]</b> with the subject "Delete my data" and the account name. We will delete the stored access token, posts, media, comments and statistics linked to that account within <b>[[DELETION DAYS]] days</b> and confirm by email.
 Copies in backups disappear when the backups expire (section 6).</li>
 </ol>
-<p><b>If you only commented on a post:</b> email the same address with your username; we delete the stored copy of your comments.</p>
+<p><b>If you only commented on a post or messaged the creator on Fanvue:</b> email the same address with your username; we delete the stored copy of your comments or messages.</p>
 </div>
 
 <h2>10. Children</h2>

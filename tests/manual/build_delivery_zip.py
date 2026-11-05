@@ -12,9 +12,9 @@ import zipfile
 from pathlib import Path
 
 root = Path.cwd()
-name = "summer-ai-content-phase2-v0.2.0"
+name = "summer-ai-content-phase3-v0.3.0"
 out = root / "dist" / f"{name}.zip"
-TOP_FILES = [".gitattributes", "README.md", "PLAN.md", "PLAN_PHASE2.md", ".env.example", ".gitignore", "alembic.ini",
+TOP_FILES = [".gitattributes", "README.md", "PLAN.md", "PLAN_PHASE2.md", "PLAN_PHASE3.md", ".env.example", ".gitignore", "alembic.ini",
              "pytest.ini", "requirements.txt", "requirements-dev.txt", "requirements.lock"]
 DIRS = ["app", "migrations", "tests", "docs", "deploy"]
 SKIP_PARTS = {"__pycache__", ".pytest_cache", ".venv", ".git"}

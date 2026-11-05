@@ -106,10 +106,17 @@ def test_placeholders_are_exactly_the_documented_ones():
 
 def test_privacy_policy_covers_what_the_service_really_does():
     p = flat("privacy.html")
-    for provider in ("Meta", "TikTok", "Anthropic", "Mistral", "DigitalOcean", "Cloudflare", "Dropbox", "Telegram", "ntfy"):
+    for provider in ("Meta", "TikTok", "Fanvue", "Anthropic", "Mistral", "DigitalOcean", "Cloudflare", "Dropbox", "Telegram",
+                     "ntfy"):
         assert provider in p, provider                                         # every processor the app talks to is named
     for fact in ("encrypted", "never see or store a password", "only ever sent after the creator", "approved by a person",
                  "Data deletion instructions", "14 days"):
+        assert fact in p, fact
+    from app.config import Settings
+
+    assert f"after {Settings().FAN_DATA_RETENTION_DAYS} days" in p              # Phase 3: matches the purge default
+    for fact in ("only when the creator presses Send", "get no AI draft", "never the text of a fan's private message",
+                 "not stored"):
         assert fact in p, fact
     backup = (ROOT / "deploy" / "backup.sh").read_text(encoding="utf-8")
     assert "-mtime +14" in backup                                              # the "14 days" in the policy matches the real backup rotation

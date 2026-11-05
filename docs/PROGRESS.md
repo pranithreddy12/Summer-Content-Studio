@@ -285,3 +285,10 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Browser check (375 px, dry run, seeded links):** page 375 px; the first version's links table squeezed names to one letter per line and the URL box to "htt" -> rebuilt as cards (URL box 308 px wide), re-checked.
 **Not verified:** real Fanvue numbers (L7), Telegram delivery of the digest, whether Instagram/TikTok accept Fanvue links in a bio (Lee decides).
 **Next:** C6 - docs (PLATFORM_SETUP Fanvue section, README, DEMO_PHASE3, security checklist), leak scan extended to fan text, delivery zip v0.3.0; then a whole-Phase-3 audit pass.
+
+
+## Phase 3 - C6 docs + hardening (2026-11-06, partly done)
+**Done:** Privacy Policy and Terms now describe Fanvue (fan chat data, AI drafts, 90-day deletion, fan deletion requests; pinned by `test_site_pages.py`); Phase 3 end-to-end leak scan `test_hardening.py::test_phase3_no_fanvue_secret_or_fan_text_leaks` (mutations "send error unsanitised" and "AI reason in push" each fail it); `docs/SECURITY_CHECKLIST.md` Phase 3 table; `docs/PLATFORM_SETUP.md` §7 Fanvue for Lee; `docs/DEMO_PHASE3.md`; README Fanvue section; DEPLOY go-live step; version 0.3.0; zip script renamed to phase3-v0.3.0 with PLAN_PHASE3.md.
+**Tests:** full suite **677 passed**.
+**Flag for Lee (legal draft):** the Terms forbid "sexually explicit content", which may not fit Fanvue use; he must review the wording.
+**Not done yet:** build + verify the delivery zip (`tests/manual/build_delivery_zip.py`); the planned whole-Phase-3 audit pass.

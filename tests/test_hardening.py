@@ -236,3 +236,99 @@ def test_no_secret_value_leaks_through_any_channel(phase2, client, app, monkeypa
             if where == "push bodies" and secret == "TOPIC-SECRET-XYZ":
                 continue                                                                  # the ntfy topic is the provider's URL path, never its body
             assert secret not in text, f"{secret!r} leaked into {where}"
+
+
+def test_phase3_no_fanvue_secret_or_fan_text_leaks(phase2, client, app, monkeypatch):
+    """Phase 3 leak scan. Fanvue tokens + client secret: never in responses, logs, the DB in clear or pushes.
+    Fan message text: allowed in the fan_messages table and on the Fans pages only - never in logs,
+    push bodies, the notifications log or generation logs (PLAN_PHASE3 §14)."""
+    import io
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    import httpx
+
+    import app.platforms as platforms
+    from app.api.dependencies import get_platform_http
+    from app.logging_setup import configure_logging
+    from app.models import FanChat, PlatformAccount
+    from app.services import accounts
+    from app.services import fan_inbox as inbox
+    from tests.test_fan_inbox import FakeLLM, msg
+    from tests.test_publish_live import NOON
+
+    phase2(PUBLISHING_MODE="live", NOTIFY_PROVIDER="ntfy", NTFY_TOPIC="TOPIC-SECRET-XYZ", FANVUE_CLIENT_ID="fv-id",
+           FANVUE_CLIENT_SECRET="FV-CLIENT-SECRET-9", DASHBOARD_USERNAME="", DASHBOARD_PASSWORD="")
+    tokens = ["FV-ACCESS-SECRET-9", "FV-REFRESH-SECRET-9", "FV-CLIENT-SECRET-9", "TOPIC-SECRET-XYZ",
+              get_settings().TOKEN_ENCRYPTION_KEY.get_secret_value()]
+    fan_text = ["FANTEXT-PRIVATE-7", "FANTEXT-PRIVATE-8", "AI-PARAPHRASE-PRIVATE-9"]
+    pushed = []
+    monkeypatch.setattr(platforms, "http_client", lambda *a, **k: httpx.Client(
+        transport=httpx.MockTransport(lambda r: pushed.append(r.content.decode() + str(r.url)) or httpx.Response(200))))
+    d = db()
+    d.add(PlatformAccount(model_profile_id=1, platform="fanvue", external_user_id="creator-uuid", username="its_me_summer",
+                          access_token_enc=accounts.encrypt("FV-ACCESS-SECRET-9"),
+                          refresh_token_enc=accounts.encrypt("FV-REFRESH-SECRET-9"), scopes=[], status="connected",
+                          token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    d.commit()
+
+    def fanvue(req):
+        p = req.url.path
+        if p == "/v1/chats":
+            return httpx.Response(200, json={"data": [{"user": {"uuid": "fan-1", "handle": "eve"}},
+                                                      {"user": {"uuid": "fan-2", "handle": "bob"}}], "nextCursor": None})
+        if p == "/v1/chats/fan-1/messages":
+            return httpx.Response(200, json={"data": [msg("e1", "FANTEXT-PRIVATE-7 are you real?", 5)]})
+        if p == "/v1/chats/fan-2/messages":
+            m = msg("b1", "FANTEXT-PRIVATE-8 hello", 6)
+            m["sender"]["uuid"] = "fan-2"
+            return httpx.Response(200, json={"data": [m]})
+        if p.endswith("/message"):   # a hostile error body that echoes the token
+            return httpx.Response(400, json={"message": "bad token FV-ACCESS-SECRET-9 access_token=FV-ACCESS-SECRET-9"})
+        return httpx.Response(500, json={"error": "nope"})
+    fv_http = lambda: httpx.Client(transport=httpx.MockTransport(fanvue))  # noqa: E731
+
+    root = logging.getLogger()
+    saved_handlers, saved_level = list(root.handlers), root.level
+    configure_logging()
+    stream = io.StringIO()
+    root.handlers[0].setStream(stream)
+    bodies = []
+    try:
+        monkeypatch.setattr(accounts, "is_worker", True)
+        inbox.sync(db(), NOON, fv_http())                                         # escalation push for eve
+        bob = db().query(FanChat).filter_by(handle="bob").one().id
+        inbox.draft_reply(db(), bob, FakeLLM("AI-PARAPHRASE-PRIVATE-9 wants money", fmt="escalate"), now=NOON)
+        inbox.reopen_chat(db(), bob)
+        monkeypatch.setattr(accounts, "is_worker", False)
+        app.dependency_overrides[get_platform_http] = fv_http
+        r = client.post(f"/api/v1/fans/chats/{bob}/send", json={"text": "hi"})
+        assert r.status_code == 409 and "FV-ACCESS-SECRET-9" not in r.text
+        bodies.append(r.text)
+        for path in ("/fans", "/api/v1/fans/chats", "/api/v1/accounts", "/accounts", "/fanvue", "/health"):
+            resp = client.get(path)
+            assert resp.status_code == 200, path
+            bodies.append(resp.text)
+    finally:
+        app.dependency_overrides.pop(get_platform_http, None)
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
+
+    raw = db().get_bind().raw_connection()
+    try:
+        con = raw.driver_connection
+        dump = "\n".join(con.iterdump())
+        logs_tables = "\n".join(str(row) for t in ("notifications", "generation_logs", "publish_attempts")
+                                for row in con.execute(f"SELECT * FROM {t}"))
+    finally:
+        raw.close()
+    assert pushed and "FANTEXT-PRIVATE-7" in dump                                  # it really ran; text is stored
+    for where, text in {"responses": "\n".join(bodies), "logs": stream.getvalue(), "database": dump,
+                        "push bodies": "\n".join(pushed)}.items():
+        for secret in tokens:
+            if where == "push bodies" and secret == "TOPIC-SECRET-XYZ":
+                continue                                                           # ntfy topic is the URL path
+            assert secret not in text, f"{secret!r} leaked into {where}"
+    for where, text in {"logs": stream.getvalue(), "push bodies": "\n".join(pushed), "log tables": logs_tables}.items():
+        for secret in fan_text:
+            assert secret not in text, f"fan text {secret!r} leaked into {where}"

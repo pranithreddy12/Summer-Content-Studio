@@ -40,3 +40,22 @@ handler, no key in any response: `tests/test_security.py` (13) and `tests/test_a
 - **One shared dashboard login** (Basic auth) — no per-user accounts or roles.
 - **SIGTERM on Linux** is handled by the same code path as Ctrl+C (event + finish current step) but was only exercised on Windows.
 - **No dependency vulnerability scan** was run (no scanner is installed on the build machine); `requirements.lock` pins exact versions so a scan can be added in CI/at deploy time.
+
+# Phase 3 additions (PLAN_PHASE3 §14) — checked 2026-11-06
+
+| # | Requirement | Evidence | State |
+|---|---|---|---|
+| P1 | Fanvue tokens Fernet-encrypted; the rotated refresh token is persisted with the access token | `test_platform_fanvue.py::test_worker_refreshes_and_persists_both_rotated_tokens`, `::test_connect_flow_end_to_end_with_pkce` (DB holds ciphertext, decrypts to the new refresh token) | ✅ |
+| P2 | PKCE S256 verifier: server-side only, single use, 10-minute state | `test_platform_fanvue.py::test_connect_flow_end_to_end_with_pkce` (challenge = S256(verifier), verifier never in the redirect, state burned); mutation "wrong verifier" fails it | ✅ |
+| P3 | Client secret only in the Basic header, never the body | `::test_exchange_uses_basic_auth_and_verifier_and_keeps_only_uuid_and_handle`; mutation "secret in body" fails 2 tests | ✅ |
+| P4 | Only the worker refreshes rotating tokens (no reuse-detection revocation) | `::test_web_side_never_refreshes_fanvue`, `test_refresh_tokens_cli_skips_fanvue`; mutation "web may refresh" fails it | ✅ |
+| P5 | No `write:creator` scope: the app cannot change prices, promotions or payouts | `test_phase3_rules.py::test_default_scopes_never_include_write_creator`, `::test_write_creator_scope_is_refused` (start-up refuses it) | ✅ |
+| P6 | Fanvue-only media never reaches Instagram/TikTok | `test_phase3_rules.py` (create, edit, generate, approve, publish pre-flight, random drafts); mutation removes the guard -> 5 fail | ✅ |
+| P7 | Every fan reply and PPV is a human POST; one send per waiting chat | `test_fan_inbox.py::test_send_reply_once`, `::test_worker_stage_syncs_drafts_and_respects_the_poll_interval` (drafts, never sends), `test_fans_ui.py::test_dashboard_posts_are_csrf_protected` | ✅ |
+| P8 | Escalations get no AI draft; drafts are re-checked | `test_fan_inbox.py::test_safety_escalations` (22 phrasings), `::test_ordinary_messages_do_not_escalate`, `::test_ai_escalation_and_bad_drafts_become_escalations`; mutations "sync never escalates" / "drafts unchecked" fail | ✅ |
+| P9 | Fan text never in logs, pushes, notification or generation logs; Fanvue secrets nowhere | **end-to-end scan** `test_hardening.py::test_phase3_no_fanvue_secret_or_fan_text_leaks` (sync, AI escalation, hostile Fanvue error echoing the token, 6 pages/endpoints; scans responses, JSON logs, a full DB dump, the log tables and push bodies); mutations "send error unsanitised" and "AI reason in push" each fail it | ✅ |
+| P10 | Fan message text deleted after 90 days | `test_fan_inbox.py::test_purge_deletes_old_text_and_empty_chats_but_keeps_escalations`, `::test_inbox_stage_runs_in_live_mode_only_and_purge_runs_daily`; Privacy Policy states the same number (`test_site_pages.py` pins it to the setting) | ✅ |
+| P11 | Fan-controlled text is escaped and never inside inline JS | `test_fans_ui.py::test_fans_pages_render_and_escape_fan_text`, `::test_handle_never_reaches_inline_javascript` | ✅ |
+| P12 | Public Privacy Policy describes the Fanvue processing | `deploy/site/privacy.html` (Fanvue named as a processor, fan chat data, AI drafts, 90-day deletion, fan deletion requests); `test_site_pages.py::test_privacy_policy_covers_what_the_service_really_does` | ✅ draft · **Lee/legal review** |
+
+**Phase 3 gaps:** nothing was sent to a real Fanvue account (no sandbox); fan-message escalation is keyword-based (broad on purpose, but a determined fan can phrase around it — every reply is still human-sent); the earnings report holds a web request while Fanvue answers (up to `PLATFORM_TIMEOUT_SECONDS`).
