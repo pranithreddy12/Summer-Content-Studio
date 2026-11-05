@@ -46,6 +46,10 @@
                     <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5h12v7H8.5L5 13.5v-3H2z"/></svg>
                     Engagement
                 </a></li>
+                <li class="nav-item"><a href="/fans" {% if request.url.path.startswith('/fans') %}class="active"{% endif %}>
+                    <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 13.5s-5.25-3.1-5.25-7A2.75 2.75 0 0 1 8 4.9a2.75 2.75 0 0 1 5.25 1.6c0 3.9-5.25 7-5.25 7z"/></svg>
+                    Fans
+                </a></li>
                 <li class="nav-item"><a href="/accounts" {% if request.url.path.startswith('/accounts') %}class="active"{% endif %}>
                     <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6.5 9.5l3-3M5 11a2.5 2.5 0 0 1 0-3.5l1.5-1.5M11 5a2.5 2.5 0 0 1 0 3.5L9.5 10"/></svg>
                     Accounts

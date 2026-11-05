@@ -1,7 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import datetime
-from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -153,6 +153,7 @@ class AssetUpdate(NonNullUpdate, BaseSchema):
     tags: Optional[List[str]] = Field(None, max_length=20)
     model_profile_id: Optional[Id] = None
     is_active: Optional[bool] = None
+    fanvue_only: Optional[bool] = None   # Phase 3 H7: never on Instagram/TikTok
 
 
 class AssetOut(BaseSchema):
@@ -168,6 +169,7 @@ class AssetOut(BaseSchema):
     size_bytes: Optional[int]
     description: str
     is_active: bool
+    fanvue_only: bool = False
     imported_at: datetime
     created_at: datetime
     updated_at: datetime
@@ -255,8 +257,11 @@ class PostCreate(BaseSchema):
         return self
 
 
+FanvueAudience = Literal["subscribers", "followers-and-subscribers"]
+
+
 class PostUpdate(NonNullUpdate, BaseSchema):
-    nullable: ClassVar[frozenset] = frozenset({"asset_id", "planned_publish_at"})
+    nullable: ClassVar[frozenset] = frozenset({"asset_id", "planned_publish_at", "fanvue_price_cents"})
 
     hook: Optional[str] = Field(None, max_length=500)
     caption: Optional[str] = Field(None, min_length=1, max_length=2200)
@@ -267,6 +272,9 @@ class PostUpdate(NonNullUpdate, BaseSchema):
     tags: Optional[List[str]] = Field(None, max_length=20)
     asset_id: Optional[Id] = None
     planned_publish_at: Optional[Union[datetime, None]] = None  # explicit null = clear
+    # Fanvue posts only (PLAN_PHASE3 §6); explicit null price = free post
+    fanvue_audience: Optional[FanvueAudience] = None
+    fanvue_price_cents: Optional[int] = Field(None, ge=1, le=1_000_000)
 
     @field_validator("planned_publish_at", mode="before")
     @classmethod
@@ -334,6 +342,9 @@ class PostOut(BaseSchema):
     planned_by: Optional[str] = None
     group_key: Optional[str] = None
     reminded_at: Optional[datetime] = None
+    # ---- Phase 3 ----
+    fanvue_audience: Optional[str] = None
+    fanvue_price_cents: Optional[int] = None
     tags: List[TagOut] = []
     asset: Optional[AssetOut] = None
     variant_count: int = 0
@@ -452,3 +463,46 @@ class RandomDraftOut(BaseSchema):
     posts: List[PostOut]
     errors: List[Dict[str, Any]] = []
     available: int
+
+
+# =========================================================================
+# Phase 3: fan inbox (PLAN_PHASE3 §11)
+# =========================================================================
+
+class FanMessageOut(BaseSchema):
+    id: int
+    direction: str
+    text: Optional[str]
+    message_type: Optional[str]
+    sent_at: Optional[datetime]
+    ppv_price_cents: Optional[int]
+    media_asset_id: Optional[int]
+    sent_via: str
+
+
+class FanChatOut(BaseSchema):
+    id: int
+    model_profile_id: int
+    fan_uuid: str
+    handle: Optional[str]
+    display_name: Optional[str]
+    last_message_at: Optional[datetime]
+    unread_count: int
+    status: str
+    escalation_reason: Optional[str]
+    draft_text: Optional[str]
+    draft_generated_at: Optional[datetime]
+
+
+class FanChatDetailOut(FanChatOut):
+    messages: List[FanMessageOut] = []
+
+
+class FanDraftRequest(BaseSchema):
+    instructions: str = Field("", max_length=300)
+
+
+class FanSendRequest(BaseSchema):
+    text: str = Field(..., min_length=1, max_length=1000)
+    asset_id: Optional[Id] = None
+    price_cents: Optional[int] = Field(None, ge=1, le=1_000_000)

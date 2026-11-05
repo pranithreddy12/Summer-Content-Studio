@@ -43,6 +43,12 @@ def local_time(value, tz_name: Optional[str] = None):
 
 templates.env.filters["local"] = local_time
 
+# One source for every platform/content-type picker (Fanvue included since Phase 3)
+from app.prompts.platforms import CONTENT_TYPES as _CONTENT_TYPES  # noqa: E402
+
+UI_CONTENT_TYPES = {p.value: [c.value for c in types] for p, types in _CONTENT_TYPES.items()}
+UI_PLATFORMS = list(UI_CONTENT_TYPES)
+
 
 def _template_response(template_name: str, context: dict, status_code: int = 200):
     """New-style TemplateResponse wrapper (starlette >= 1.0 signature)."""
@@ -338,6 +344,7 @@ async def asset_update(
     tags: str = Form(""),
     model_profile_id: Optional[int] = Form(None),
     is_active: bool = Form(False),
+    fanvue_only: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     """Update asset metadata."""
@@ -350,7 +357,7 @@ async def asset_update(
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
     try:
-        update_asset(db, asset_id, filename, description, tag_list, model_profile_id, is_active)
+        update_asset(db, asset_id, filename, description, tag_list, model_profile_id, is_active, fanvue_only)
         return redirect_with_flash(f"/assets/{asset_id}", "Asset updated successfully")
     except Exception as e:
         return redirect_with_flash(f"/assets/{asset_id}", str(e), "error")
@@ -440,11 +447,8 @@ async def generate_form(
         "assets": assets,
         "campaigns": campaigns,
         "selected_asset": selected_asset,
-        "platforms": ["instagram", "tiktok"],
-        "content_types": {
-            "instagram": ["feed_post", "reel", "story"],
-            "tiktok": ["video", "photo_post"],
-        },
+        "platforms": UI_PLATFORMS,
+        "content_types": UI_CONTENT_TYPES,
         "batch_key": uuid.uuid4().hex[:20],
         "eligible_count": len(eligible_assets(db)),
         "flash": get_flash(request),
@@ -519,11 +523,8 @@ def generate_content(
             "profiles": profiles,
             "assets": assets,
             "campaigns": campaigns,
-            "platforms": ["instagram", "tiktok"],
-            "content_types": {
-                "instagram": ["feed_post", "reel", "story"],
-                "tiktok": ["video", "photo_post"],
-            },
+            "platforms": UI_PLATFORMS,
+            "content_types": UI_CONTENT_TYPES,
             "error": message,
             "form_data": req.model_dump(),
         }, status_code=e.status_code)
@@ -605,7 +606,7 @@ async def posts_list(
     )
 
     # Filter options (PLAN §13: queue filters add publishing, sent_to_drafts, failed)
-    platforms = ["instagram", "tiktok"]
+    platforms = UI_PLATFORMS
     statuses = ["draft", "approved", "scheduled", "publishing", "sent_to_drafts", "published", "failed", "archived"]
     campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
 
@@ -676,6 +677,8 @@ async def post_update(
     tags: str = Form(""),
     asset_id: Optional[int] = Form(None),
     planned_publish_at: Optional[str] = Form(None),
+    fanvue_audience: Optional[str] = Form(None),
+    fanvue_price: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Update post content."""
@@ -705,6 +708,16 @@ async def post_update(
         changes["tags"] = tag_list
     if asset_id != post.media_asset_id:
         changes["asset_id"] = asset_id
+    if post.platform == "fanvue":
+        if fanvue_audience and fanvue_audience != (post.fanvue_audience or "subscribers"):
+            changes["fanvue_audience"] = fanvue_audience
+        price_text = (fanvue_price or "").strip().lstrip("$")
+        try:
+            cents = round(float(price_text) * 100) if price_text else None
+        except (ValueError, OverflowError):   # "abc", "inf", "nan"
+            return redirect_with_flash(f"/posts/{post_id}", "Price must be a number like 9.99.", "error")
+        if cents != post.fanvue_price_cents:
+            changes["fanvue_price_cents"] = cents
 
     current_local = local_time(post.planned_publish_at)
     current_text = current_local.strftime("%Y-%m-%dT%H:%M") if current_local else ""
@@ -1280,3 +1293,118 @@ async def engagement_ignore(comment_id: int, db: Session = Depends(get_db)):
     except AppError as e:
         return _engagement_redirect(e.message, "error")
     return _engagement_redirect("Comment ignored.")
+
+
+# =========================================================================
+# Phase 3 C4: Fanvue fan inbox (PLAN_PHASE3 §12)
+# =========================================================================
+
+_FAN_TABS = {"waiting": None, "replied": "replied", "ignored": "ignored"}
+
+
+@router.get("/fans", response_class=HTMLResponse)
+async def fans_page(request: Request, tab: str = "waiting", db: Session = Depends(get_db)):
+    from app.services import fan_inbox as svc
+
+    tab = tab if tab in _FAN_TABS else "waiting"
+    if tab == "waiting":
+        chats = [c for c in svc.list_chats(db) if c.status in ("escalated", "needs_reply", "sending")]
+    else:
+        chats = svc.list_chats(db, _FAN_TABS[tab])
+    return _template_response("fans.html", {
+        "request": request, "chats": chats, "tab": tab, "waiting": svc.waiting_count(db),
+        "flash": get_flash(request),
+    })
+
+
+@router.get("/fans/{chat_id:int}", response_class=HTMLResponse)
+async def fan_chat_page(request: Request, chat_id: int, db: Session = Depends(get_db)):
+    from app.services import fan_inbox as svc
+
+    chat = svc.get_chat(db, chat_id)
+    ppv_assets = db.execute(select(MediaAsset).where(
+        MediaAsset.is_active == True, MediaAsset.media_type.in_(("image", "video")),  # noqa: E712
+        MediaAsset.storage_type.in_(("upload", "local_sync"))).order_by(desc(MediaAsset.created_at)).limit(200)).scalars().all()
+    return _template_response("fan_chat.html", {
+        "request": request, "chat": chat, "messages": chat.messages[-50:], "ppv_assets": ppv_assets,
+        "flash": get_flash(request),
+    })
+
+
+def _fan_redirect(chat_id: Optional[int], msg: str, kind: str = "ok"):
+    return redirect_with_flash(f"/fans/{chat_id}" if chat_id else "/fans", msg, kind)
+
+
+@router.post("/fans/sync")
+def fans_sync(db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import fan_inbox as svc
+
+    if get_settings().PUBLISHING_MODE != "live":
+        return _fan_redirect(None, "The fan inbox syncs in live mode only.", "error")
+    try:
+        out = svc.sync(db, utcnow(), http)
+    except AppError as e:
+        return _fan_redirect(None, e.message, "error")
+    return _fan_redirect(None, f"Checked {out['chats']} waiting chat(s): {out['needs_reply']} need a reply, "
+                               f"{out['escalated']} need you." + (f" {out['errors']} problem(s)." if out["errors"] else ""))
+
+
+@router.post("/fans/{chat_id:int}/draft")
+def fan_draft(request: Request, chat_id: int, instructions: str = Form(""), db: Session = Depends(get_db),
+              client=Depends(get_claude_client)):
+    from app.services import AppError
+    from app.services import fan_inbox as svc
+    from app.services.claude_client import GenerationError
+
+    generation_rate_limit(request)
+    try:
+        chat = svc.draft_reply(db, chat_id, client, instructions[:300])
+    except (GenerationError, AppError) as e:
+        return _fan_redirect(chat_id, e.message, "error")
+    if chat.status == "escalated":
+        return _fan_redirect(chat_id, "No safe draft: this one needs you. Reply yourself here or in the Fanvue app.", "error")
+    return _fan_redirect(chat_id, "Draft ready - read it, edit it, then press Send.")
+
+
+@router.post("/fans/{chat_id:int}/send")
+def fan_send(request: Request, chat_id: int, text: str = Form(""), asset_id: Optional[int] = Form(None),
+             price: str = Form(""), db: Session = Depends(get_db), http=Depends(get_platform_http)):
+    from app.services import AppError
+    from app.services import fan_inbox as svc
+
+    generation_rate_limit(request)
+    price_text = (price or "").strip().lstrip("$")
+    try:
+        cents = round(float(price_text) * 100) if price_text else None
+    except (ValueError, OverflowError):
+        return _fan_redirect(chat_id, "Price must be a number like 9.99.", "error")
+    try:
+        svc.send_reply(db, chat_id, text, http, asset_id, cents)
+    except AppError as e:
+        return _fan_redirect(chat_id, e.message, "error")
+    return _fan_redirect(chat_id, "Sent." + (" Paid media attached." if asset_id else ""))
+
+
+@router.post("/fans/{chat_id:int}/ignore")
+def fan_ignore(chat_id: int, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import fan_inbox as svc
+
+    try:
+        svc.ignore_chat(db, chat_id)
+    except AppError as e:
+        return _fan_redirect(chat_id, e.message, "error")
+    return _fan_redirect(None, "Chat moved to Ignored.")
+
+
+@router.post("/fans/{chat_id:int}/reopen")
+def fan_reopen(chat_id: int, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import fan_inbox as svc
+
+    try:
+        svc.reopen_chat(db, chat_id)
+    except AppError as e:
+        return _fan_redirect(chat_id, e.message, "error")
+    return _fan_redirect(chat_id, "Chat reopened.")

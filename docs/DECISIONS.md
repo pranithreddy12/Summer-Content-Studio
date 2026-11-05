@@ -206,3 +206,10 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **Pushes never carry fan text or AI paraphrases:** escalation pushes say `@handle: <fixed reason>`; AI-written reasons stay in the dashboard.
 - **Auto-drafts:** at most 5 per worker run and 20 per hour (failed calls count), none without an AI key, and the AI client is only built when a chat is waiting for a draft (found in testing: building it unconditionally made a cached client leak between tests).
 - **Retention:** messages older than `FAN_DATA_RETENTION_DAYS` are deleted daily, in every mode except `off`; chats left empty go too, except open escalations.
+
+## Phase 3 C4 decisions (2026-11-06)
+- **No sidebar badge for waiting fans** (the plan asked for one): every page would need a DB query in the shared template context. The count is on the Fans page header instead; Telegram pushes are the real alert.
+- **"Fanvue only" is set on the asset page**, not at upload: upload stays one step, and the flag is enforced at attach/approve/publish anyway.
+- **A changed Fanvue price or audience resets approval**, like any content edit: Lee approves the offer he will actually publish.
+- **Fan handles never go into inline JavaScript** (the Send confirm text is generic): HTML-escaping does not make text safe inside a JS string in an `onclick`. Note: the older Engagement page interpolates Instagram usernames there; Instagram's username charset makes it harmless today.
+- **One platform list for every picker** (`UI_PLATFORMS`/`UI_CONTENT_TYPES` from `prompts.platforms.CONTENT_TYPES`): the audit found the Generate page and Queue filter still hard-coded Instagram/TikTok, so Fanvue posts could not be generated from the dashboard.

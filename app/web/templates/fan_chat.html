@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}@{{ chat.handle or 'fan' }} — Fans — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow"><a href="/fans">Fans</a></span>
+      <h1 style="overflow-wrap:anywhere;">@{{ chat.handle or 'fan' }}</h1>
+      <p class="page-lede">{% if chat.display_name %}{{ chat.display_name }} · {% endif %}status <strong>{{ 'needs you' if chat.status == 'escalated' else chat.status | replace('_', ' ') }}</strong></p>
+    </div>
+  </header>
+
+  {% if chat.status == 'escalated' %}
+  <div class="banner banner-warning"><p><strong>This chat needs you{% if chat.escalation_reason %}: {{ chat.escalation_reason }}{% endif %}.</strong> No AI draft is offered. Reply yourself below or in the Fanvue app, or press Reopen to allow a draft.</p></div>
+  {% elif chat.status == 'sending' %}
+  <div class="banner banner-info"><p>Sending… If this stays here for more than 5 minutes, check the chat in the Fanvue app, then press Reopen.</p></div>
+  {% endif %}
+
+  <section class="section">
+    <div class="card" style="padding:16px;">
+      {% if not messages %}<p class="small">No messages stored (message text is deleted after {{ settings.FAN_DATA_RETENTION_DAYS }} days).</p>{% endif %}
+      {% for m in messages %}
+      <div style="margin:8px 0;{% if m.direction == 'out' %}text-align:right;{% endif %}">
+        <div style="display:inline-block;max-width:85%;padding:8px 12px;border-radius:12px;text-align:left;overflow-wrap:anywhere;background:{% if m.direction == 'out' %}var(--accent-soft, #e8ecff){% else %}var(--surface-2, #f1f1f1){% endif %};">
+          <p style="margin:0;">{{ m.text or '(media)' }}</p>
+          <p class="small" style="margin:4px 0 0;">{{ 'Summer' if m.direction == 'out' else '@' ~ (chat.handle or 'fan') }}
+            {% if m.sent_at %}· {{ (m.sent_at | local).strftime('%m-%d %H:%M') }}{% endif %}
+            {% if m.ppv_price_cents %}· paid {{ '%.2f' % (m.ppv_price_cents / 100) }}{% endif %}
+            {% if m.sent_via == 'studio' %}· sent from here{% endif %}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if chat.status in ('needs_reply', 'escalated', 'ignored') %}
+  <section class="section">
+    <form method="post" action="/fans/{{ chat.id }}/send" class="form-box">
+      <div class="form-group">
+        <label for="text">Reply {% if chat.draft_text %}<span class="small">(AI draft — edit freely)</span>{% endif %}</label>
+        <textarea name="text" id="text" rows="4" maxlength="1000" placeholder="Write a reply{% if chat.status == 'needs_reply' %}, or press Draft with AI{% endif %}">{{ chat.draft_text or '' }}</textarea>
+      </div>
+      <details class="form-group">
+        <summary>Attach paid media (pay-to-view)</summary>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="asset_id">Media</label>
+            <select name="asset_id" id="asset_id">
+              <option value="">None</option>
+              {% for a in ppv_assets %}<option value="{{ a.id }}">{{ a.filename }}{% if a.fanvue_only %} · Fanvue only{% endif %}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="price">Price (USD)</label>
+            <input type="text" inputmode="decimal" name="price" id="price" placeholder="e.g. 9.99">
+            <div class="field-hint">Allowed {{ '%.2f' % (settings.FANVUE_PPV_MIN_CENTS / 100) }}–{{ '%.2f' % (settings.FANVUE_PPV_MAX_CENTS / 100) }}. You choose the price; the AI never does.</div>
+          </div>
+        </div>
+      </details>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}
+                onclick="return confirm('Send this message on Fanvue now?')">Send</button>
+        {% if chat.status == 'needs_reply' %}
+        <button type="submit" class="btn" formaction="/fans/{{ chat.id }}/draft" formnovalidate>{{ 'Draft again' if chat.draft_text else 'Draft with AI' }}</button>
+        {% endif %}
+        {% if chat.status != 'ignored' %}
+        <button type="submit" class="btn btn-danger" formaction="/fans/{{ chat.id }}/ignore" formnovalidate>Ignore</button>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+  {% endif %}
+
+  {% if chat.status in ('ignored', 'escalated', 'replied', 'sending') %}
+  <form method="post" action="/fans/{{ chat.id }}/reopen" class="inline-form"><button type="submit" class="btn btn-sm">Reopen</button></form>
+  {% endif %}
+</div>
+{% endblock %}

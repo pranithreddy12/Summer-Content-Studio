@@ -132,6 +132,24 @@
           </div>
         </div>
 
+        {% if post.platform == 'fanvue' %}
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fanvue_audience">Who can see it</label>
+            <select name="fanvue_audience" id="fanvue_audience">
+              <option value="subscribers" {% if (post.fanvue_audience or 'subscribers') == 'subscribers' %}selected{% endif %}>Subscribers only</option>
+              <option value="followers-and-subscribers" {% if post.fanvue_audience == 'followers-and-subscribers' %}selected{% endif %}>Followers and subscribers</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="fanvue_price">Price to unlock (USD, empty = free)</label>
+            <input type="text" inputmode="decimal" name="fanvue_price" id="fanvue_price" placeholder="e.g. 9.99"
+              value="{{ '%.2f' % (post.fanvue_price_cents / 100) if post.fanvue_price_cents else '' }}">
+            <div class="field-hint">Allowed {{ '%.2f' % (settings.FANVUE_PPV_MIN_CENTS / 100) }}–{{ '%.2f' % (settings.FANVUE_PPV_MAX_CENTS / 100) }}.</div>
+          </div>
+        </div>
+        {% endif %}
+
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Save</button>
           {% if post.status == 'draft' %}

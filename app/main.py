@@ -251,7 +251,7 @@ def create_app() -> FastAPI:
         }
 
     from app.api import profiles, assets, content, posts, tags, planner, notifications
-    from app.api import accounts as accounts_api, engagement as engagement_api, media_public, publishing as publishing_api
+    from app.api import accounts as accounts_api, engagement as engagement_api, fans as fans_api, media_public, publishing as publishing_api
     from app.web import routes as web_routes
 
     app.include_router(profiles.router, prefix="/api/v1")
@@ -264,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(accounts_api.router, prefix="/api/v1")
     app.include_router(publishing_api.router, prefix="/api/v1")
     app.include_router(engagement_api.router, prefix="/api/v1")
+    app.include_router(fans_api.router, prefix="/api/v1")
     app.include_router(accounts_api.oauth_router)
     app.include_router(media_public.router)
     app.include_router(web_routes.router)

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings, publishing_mode
@@ -121,9 +122,9 @@ def sync(db: Session, now: datetime, http) -> dict:
             out["chats"] += 1
             try:
                 state = _sync_chat(db, account, fan, item, token, http, rules, now)
-            except PlatformError as e:
+            except (PlatformError, IntegrityError) as e:   # IntegrityError: a manual sync raced the worker
                 db.rollback()
-                logger.warning("fan chat sync failed: %s", e.code)
+                logger.warning("fan chat sync failed: %s", getattr(e, "code", "duplicate"))
                 out["errors"] += 1
                 continue
             out["new_messages"] += state["new"]

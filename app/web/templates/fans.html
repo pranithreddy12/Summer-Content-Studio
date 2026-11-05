@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Fans — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Fanvue</span>
+      <h1>Fans</h1>
+      <p class="page-lede">Chats where a fan is waiting for Summer. The AI drafts replies, but <strong>nothing is sent until you press Send</strong>. Chats marked <em>needs you</em> got no draft on purpose.</p>
+    </div>
+    <div class="page-actions">
+      <form method="post" action="/fans/sync" class="inline-form"><button type="submit" class="btn" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}>Refresh now</button></form>
+    </div>
+  </header>
+
+  {% if settings.PUBLISHING_MODE != 'live' %}
+  <div class="banner banner-info"><p>The fan inbox works in <strong>live</strong> mode with a connected Fanvue account. Nothing is read from or sent to Fanvue otherwise.</p></div>
+  {% endif %}
+
+  <div class="stat-grid">
+    <div class="stat stat-accent"><div class="stat-value">{{ waiting }}</div><div class="stat-label">Fans waiting</div></div>
+  </div>
+
+  <nav class="tabs" style="margin:16px 0;">
+    {% for key, label in [('waiting', 'Waiting'), ('replied', 'Replied'), ('ignored', 'Ignored')] %}
+    <a class="btn btn-sm {% if tab == key %}btn-primary{% endif %}" href="/fans?tab={{ key }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if not chats %}
+  <div class="card" style="padding:24px;"><p>Nothing here{% if tab == 'waiting' %} — no fan is waiting for a reply{% endif %}.</p></div>
+  {% endif %}
+
+  {% for c in chats %}
+  {% set last = c.messages[-1] if c.messages else None %}
+  <a class="card" href="/fans/{{ c.id }}" style="display:block;padding:16px;margin-bottom:12px;color:inherit;text-decoration:none;">
+    <p class="small"><strong>@{{ c.handle or 'fan' }}</strong>{% if c.display_name %} · {{ c.display_name }}{% endif %}
+      {% if c.last_message_at %}· {{ (c.last_message_at | local).strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      · {% if c.status == 'escalated' %}<span class="badge badge-failed">needs you</span>
+        {% elif c.status == 'needs_reply' %}<span class="badge badge-draft">{{ 'draft ready' if c.draft_text else 'waiting' }}</span>
+        {% else %}<span class="badge badge-approved">{{ c.status }}</span>{% endif %}</p>
+    {% if c.status == 'escalated' and c.escalation_reason %}<p class="small"><strong>Why:</strong> {{ c.escalation_reason }}</p>{% endif %}
+    {% if last and last.text %}<p style="margin:0;overflow-wrap:anywhere;">{{ 'You: ' if last.direction == 'out' else '' }}{{ last.text | truncate(140) }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

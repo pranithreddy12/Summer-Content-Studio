@@ -6,10 +6,11 @@ from typing import Optional
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import get_settings
 from app.db import utcnow
 from app.models import (
     ContentPost, ContentVariant, ModelProfile, MediaAsset, Tag,
-    PostStatus, PostSource
+    Platform, PostStatus, PostSource
 )
 from app.schemas import PostCreate, PostUpdate
 from app.services import AppError
@@ -325,7 +326,17 @@ def update_post(db: Session, post_id: int, req: PostUpdate) -> ContentPost:
     update_data = req.model_dump(exclude_unset=True)
 
     # Fields that count as a "content edit" (resets approval per transition table)
-    CONTENT_FIELDS = {"hook", "caption", "hashtags", "call_to_action", "content_notes", "asset_id", "tags", "campaign"}
+    CONTENT_FIELDS = {"hook", "caption", "hashtags", "call_to_action", "content_notes", "asset_id", "tags", "campaign",
+                      "fanvue_audience", "fanvue_price_cents"}   # a new price/audience is re-approved too
+
+    # Fanvue offer fields belong to Fanvue posts only; the price must be inside the PPV range (H6)
+    if any(update_data.get(k) is not None for k in ("fanvue_audience", "fanvue_price_cents"))             and post.platform != "fanvue":
+        raise AppError("validation_error", "Audience and price apply to Fanvue posts only.", status=422)
+    if update_data.get("fanvue_price_cents") is not None:
+        s = get_settings()
+        if not s.FANVUE_PPV_MIN_CENTS <= update_data["fanvue_price_cents"] <= s.FANVUE_PPV_MAX_CENTS:
+            raise AppError("validation_error", f"Price must be between {s.FANVUE_PPV_MIN_CENTS / 100:.2f} and "
+                                               f"{s.FANVUE_PPV_MAX_CENTS / 100:.2f}.", status=422)
     content_changed = bool(CONTENT_FIELDS & set(update_data.keys()))
 
     # Handle hashtags
@@ -491,7 +502,7 @@ def stats(db: Session) -> dict:
 
     # Counts by platform x status
     platform_status = {}
-    for platform in ["instagram", "tiktok"]:
+    for platform in [p.value for p in Platform]:
         platform_status[platform] = {}
         for status_val in [s.value for s in PostStatus]:
             count = db.execute(

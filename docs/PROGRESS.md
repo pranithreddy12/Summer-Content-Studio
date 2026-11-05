@@ -266,3 +266,13 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Defects found by the tests/audit and fixed before commit:** "I'm 16 btw" did not escalate (age pattern needed "yo/years"); AI-written escalation reasons were going into the push; auto-draft would log a failure every 2 minutes with no AI key; the worker built the cached AI client even with nothing to draft, which leaked into a later dashboard test (order-dependent failure).
 **Not verified:** real Fanvue chats (`not_answered` semantics, message `type` values in practice), real AI draft quality, Telegram delivery of the new pushes.
 **Next:** C4 - dashboard `/fans`, `/fans/{id}`, Fanvue-only checkbox, post-detail Fanvue fields, API routes (§11), 375 px check.
+
+
+## Phase 3 - C4 dashboard + API (2026-11-06)
+**Files created:** `app/api/fans.py` (`/api/v1/fans/chats`, `/chats/{id}`, `/draft`, `/send`, `/ignore`, `/reopen`, `/sync` live-only), `app/web/templates/fans.html`, `app/web/templates/fan_chat.html`, `tests/test_fans_ui.py` (17).
+**Files changed:** `app/schemas.py` (fan schemas; `AssetUpdate/Out.fanvue_only`; `PostUpdate/Out.fanvue_audience/fanvue_price_cents`), `app/services/assets.py`, `app/api/assets.py`, `app/services/posts.py` (offer fields Fanvue-only + PPV range + re-approval; overview counts include every platform), `app/services/fan_inbox.py` (a manual sync racing the worker no longer 500s), `app/web/routes.py` (`/fans` pages and forms; asset "Fanvue only" checkbox; post audience/price fields; one platform list for pickers), `app/web/templates/{base,asset_detail,post_detail}.html`, `app/main.py`.
+**Tests:** full suite **657 passed** (C3 baseline 640). Covered: API flows + validation + live-only sync, pages escape fan text (`<script>` stays text), the handle never reaches inline JS, real-browser form values (`asset_id=""`, `$9.99`, `inf`, `nan`), CSRF on the new POSTs (403), Fanvue-only checkbox via API and form, price/audience via API and form.
+**Browser check (real browser pane, 375 px, scratch DB, dry-run mode):** `/fans` 375 px (379 = viewport, no overflow), `/fans/1` (escalated, 50-char handle) 375 px with the handle wrapping, `/fans/2` (draft + open paid-media panel) 375 px, Fanvue post page 375 px showing the 9.99 price; Send disabled outside live mode. Screenshots looked right.
+**Audit findings fixed:** Fanvue missing from Generate and Queue pickers (posts could not be generated from the UI); overview per-platform table ignored Fanvue; sync race -> IntegrityError 500; warning banner class did not exist.
+**Not done:** sidebar badge (see DECISIONS); real Fanvue/LLM.
+**Next:** C5 - tracking links + `/fanvue` report page + weekly digest.

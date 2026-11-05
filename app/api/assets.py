@@ -118,6 +118,7 @@ async def update_asset_endpoint(asset_id: int, req: AssetUpdate, db: Session = D
             tags=req.tags,
             model_profile_id=req.model_profile_id,
             is_active=req.is_active,
+            fanvue_only=req.fanvue_only,
         )
     except HTTPException:
         raise

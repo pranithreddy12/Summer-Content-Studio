@@ -426,6 +426,7 @@ def update_asset(
     tags: Optional[list[str]] = None,
     model_profile_id: Optional[int] = None,
     is_active: Optional[bool] = None,
+    fanvue_only: Optional[bool] = None,
 ) -> MediaAsset:
     """Update asset metadata."""
     asset = get_asset(db, asset_id)
@@ -440,6 +441,8 @@ def update_asset(
         asset.model_profile_id = model_profile_id
     if is_active is not None:
         asset.is_active = is_active
+    if fanvue_only is not None:
+        asset.fanvue_only = fanvue_only
     if tags is not None:
         asset.tags = get_or_create_tags(db, tags)
 
