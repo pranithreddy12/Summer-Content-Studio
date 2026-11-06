@@ -13,10 +13,7 @@ from app.config import get_settings
 from app.db import Base, get_engine, init_db
 from app.logging_setup import configure_logging, get_logger
 
-# NOTE: app.security still owns _rate_limit_store (used at runtime by the rate limiter),
-# but app/main.py no longer imports require_basic_auth / check_origin — that auth + CSRF
-# logic lives inline in auth_and_csrf_middleware below to keep the composition explicit.
-import app.security as _security  # noqa: F401  (kept for runtime store + future refactors)
+# Basic auth + CSRF live in auth_and_csrf_middleware below.
 
 
 # Configure logging early

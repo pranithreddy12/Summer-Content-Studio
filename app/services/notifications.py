@@ -117,8 +117,9 @@ def notify(db: Session, event: str, key: str, title: str, body: str = "",
         return False
 
     link = dashboard_url(settings, url) if url else None
+    own_client = http is None   # a client made here is closed here (callers' clients are theirs)
     try:
-        if http is None:
+        if own_client:
             from app.platforms import http_client
 
             http = http_client(settings)
@@ -139,6 +140,9 @@ def notify(db: Session, event: str, key: str, title: str, body: str = "",
         log.error_category = "http_error"
         db.commit()
         return False
+    finally:
+        if own_client and http is not None:
+            http.close()
 
 
 def send_test(db: Session, http=None) -> bool:

@@ -1113,17 +1113,23 @@ async def profile_update(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    import json
+    from pydantic import ValidationError
+
+    from app.schemas import ProfileUpdate
+
+    try:  # same rules as PATCH /api/v1/profiles (blank name, text caps, list sizes)
+        data = ProfileUpdate(
+            name=name.strip(), persona_description=persona_description, tone_style=tone_style,
+            communication_rules=[r.strip() for r in communication_rules.splitlines() if r.strip()],
+            restricted_topics=[r.strip() for r in restricted_topics.splitlines() if r.strip()],
+            style_notes=style_notes, cta_guidelines=cta_guidelines, is_active=is_active)
+    except ValidationError as e:
+        problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())
+        return redirect_with_flash(f"/profiles/{profile_id}", problems, "error")
 
     try:
-        profile.name = name
-        profile.persona_description = persona_description
-        profile.tone_style = tone_style
-        profile.communication_rules = [r.strip() for r in communication_rules.splitlines() if r.strip()]
-        profile.restricted_topics = [r.strip() for r in restricted_topics.splitlines() if r.strip()]
-        profile.style_notes = style_notes
-        profile.cta_guidelines = cta_guidelines
-        profile.is_active = is_active
+        for field, value in data.model_dump().items():
+            setattr(profile, field, value)
 
         db.commit()
         db.refresh(profile)

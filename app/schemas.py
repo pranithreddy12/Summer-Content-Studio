@@ -81,14 +81,18 @@ class ProfileOut(BaseSchema):
         return v
 
 
+PROFILE_TEXT_MAX = 4000
+
+
 class ProfileUpdate(NonNullUpdate, BaseSchema):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    persona_description: Optional[str] = None
-    tone_style: Optional[str] = None
+    # these go into every AI prompt: capped so a paste can't blow up the cost (audit L10)
+    persona_description: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
+    tone_style: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
     communication_rules: Optional[List[str]] = Field(None, max_length=30)
     restricted_topics: Optional[List[str]] = Field(None, max_length=30)
-    style_notes: Optional[str] = None
-    cta_guidelines: Optional[str] = None
+    style_notes: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
+    cta_guidelines: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
     is_active: Optional[bool] = None
 
     @field_validator("communication_rules", "restricted_topics", mode="before")

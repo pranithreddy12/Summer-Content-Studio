@@ -11,11 +11,13 @@ from app.config import get_settings
 
 
 _SECRET_FRAGMENT = re.compile(r"""(access_token|refresh_token|client_secret|code_verifier)=[^&\s"']+""")
+_BOT_TOKEN = re.compile(r"\bbot[0-9]{5,}:[A-Za-z0-9_-]{20,}")
 
 
 def redact(text: str) -> str:
-    """Blank `access_token=...` style fragments (platform tokens ride in query strings)."""
-    return _SECRET_FRAGMENT.sub(r"\g<1>=[redacted]", text)
+    """Blank `access_token=...` style fragments (platform tokens ride in query strings) and
+    Telegram bot tokens (they ride in the URL path)."""
+    return _BOT_TOKEN.sub("bot[redacted]", _SECRET_FRAGMENT.sub(r"\g<1>=[redacted]", text))
 
 
 class JsonFormatter(logging.Formatter):

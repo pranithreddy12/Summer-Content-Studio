@@ -300,3 +300,10 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Tests:** full suite **678 passed**. Delivery zip `dist/summer-ai-content-phase3-v0.3.0.zip` built and verified: lock file portable, deploy/ LF, no real secret or forbidden file, suite green from the extracted copy.
 **Not verified (needs Lee, L7-L10):** real Fanvue API behaviour, real AI draft quality, Telegram delivery of fan pushes and the digest.
 **Next:** L7-L10 when Lee's Fanvue developer app arrives; Lee reviews the Terms wording.
+
+
+## Phase 2 re-audit (2026-11-06)
+**Files changed:** `app/web/templates/engagement.html` (L1), `app/config.py` (L3), `app/logging_setup.py` + `app/services/notifications.py` (L4), `app/security.py` + `app/main.py` (L7 dead code removed), `app/schemas.py` + `app/web/routes.py` (L10), `app/services/planner.py` (L11 TikTok top-up = video), `tests/test_audit_fixes.py` (+5), `docs/AUDIT_2026-10-24.md` (re-audit table).
+**Checked:** PLAN_PHASE2 §19 A, the open Low list, all Phase 3 edits to Phase 2 files (Fanvue-scoped, no IG/TikTok regressions).
+**Tests:** full suite **683 passed**; each new test fails when its fix is reverted. App + worker smoke on a scratch DB OK.
+**Still open:** L2 (sync dedupe vs moved files), L5 (`/health` schema check), L8 (`?msg=` spoof), L9 (needs live IG), L11 per-day cap; login throttling; metric-row pruning; Phase 2 live milestones L1-L6.

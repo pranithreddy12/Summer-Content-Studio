@@ -1,117 +1,17 @@
-"""Security utilities: basic auth, origin check, rate limiter, safe path helpers."""
+"""Security utilities: rate limiter, safe path helpers, upload validation.
+
+Dashboard auth + CSRF live in app/main.py middleware."""
 
 import hashlib
-import secrets
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import HTTPException, Request, status
 
 from app.config import get_settings
 from app.db import utcnow
 from app.models import MediaType, StorageType
-
-
-# =========================================================================
-# Basic Auth
-# =========================================================================
-
-security = HTTPBasic(auto_error=False)
-
-
-async def get_basic_auth_credentials(
-    credentials: Optional[HTTPBasicCredentials] = Depends(security),
-) -> Optional[HTTPBasicCredentials]:
-    """Get basic auth credentials if provided."""
-    return credentials
-
-
-def require_basic_auth(
-    request: Request,
-    credentials: Optional[HTTPBasicCredentials] = Depends(get_basic_auth_credentials),
-) -> None:
-    """Dependency that enforces basic auth when enabled."""
-    settings = get_settings()
-    if not settings.basic_auth_enabled:
-        return
-
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-    correct_username = secrets.compare_digest(credentials.username, settings.DASHBOARD_USERNAME or "")
-    correct_password = secrets.compare_digest(
-        credentials.password, settings.DASHBOARD_PASSWORD.get_secret_value() if settings.DASHBOARD_PASSWORD else ""
-    )
-
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-
-# =========================================================================
-# Origin/Referer Check (CSRF mitigation for dashboard)
-# =========================================================================
-
-def check_origin(request: Request) -> None:
-    """Check Origin/Referer header for non-API unsafe methods."""
-    # Only check dashboard routes (not /api)
-    if request.url.path.startswith("/api"):
-        return
-
-    # Only check unsafe methods
-    if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
-        return
-
-    origin = request.headers.get("origin")
-    referer = request.headers.get("referer")
-
-    # If no origin/referer, allow (some clients don't send them)
-    if not origin and not referer:
-        return
-
-    host = request.headers.get("host")
-    if not host:
-        return
-
-    # Check origin
-    if origin:
-        try:
-            from urllib.parse import urlparse
-            origin_host = urlparse(origin).netloc
-            if origin_host != host:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid origin",
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
-
-    # Check referer as fallback
-    if referer:
-        try:
-            from urllib.parse import urlparse
-            referer_host = urlparse(referer).netloc
-            if referer_host != host:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid referer",
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
 
 
 # =========================================================================

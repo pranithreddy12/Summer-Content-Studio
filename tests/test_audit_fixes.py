@@ -460,3 +460,85 @@ def test_m18_draft_reply_provider_error_is_a_clean_error(app, client):
     finally:
         app.dependency_overrides.pop(get_claude_client, None)
     assert r.status_code == 429
+
+
+# ---- Low items closed in the Phase 2 re-audit (2026-11-06) ---------------------------
+
+def test_l1_no_username_inside_inline_js():
+    from pathlib import Path
+
+    src = Path("app/web/templates/engagement.html").read_text(encoding="utf-8")
+    import re
+
+    assert "author_username" in src and not re.search(r'onclick="[^"]*author_username', src)
+
+
+def test_l3_worker_interval_and_planner_hour_are_bounded():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    for bad in ({"WORKER_INTERVAL_SECONDS": 0}, {"PLANNER_RUN_HOUR": 25}, {"PLANNER_RUN_HOUR": 24}):
+        with pytest.raises(ValidationError):
+            Settings(**bad)
+    assert Settings(PLANNER_RUN_HOUR=23, WORKER_INTERVAL_SECONDS=1).PLANNER_RUN_HOUR == 23
+
+
+def test_l4_bot_token_redacted_and_own_client_closed(client, monkeypatch):
+    import httpx
+
+    from app import platforms
+    from app.logging_setup import redact
+    from app.services import notifications
+
+    token = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"
+    assert token not in redact(f"POST https://api.telegram.org/bot{token}/sendMessage failed")
+
+    made = []
+
+    def factory(*a, **k):
+        made.append(httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200))))
+        return made[-1]
+
+    monkeypatch.setattr(platforms, "http_client", factory)
+    monkeypatch.setattr(notifications, "get_settings", lambda: SimpleNamespace(
+        NOTIFY_PROVIDER="ntfy", notify_configured=True, NTFY_SERVER="https://ntfy.example",
+        NTFY_TOPIC=SimpleNamespace(get_secret_value=lambda: "t"), PUBLIC_BASE_URL=None), raising=False)
+    notifications.notify(db(), "test", "l4-close-check", "t", "b")
+    assert made and made[0].is_closed
+
+
+def test_l10_profile_form_refuses_blank_name_and_huge_text(client):
+    base = {"name": "Summer", "persona_description": "p", "tone_style": "t", "communication_rules": "",
+            "restricted_topics": "", "style_notes": "", "cta_guidelines": "", "is_active": "true"}
+    before = db().get(ModelProfile, 1).name
+    r = client.post("/profiles/1", data={**base, "name": "   "}, follow_redirects=False)
+    assert r.status_code == 303 and "kind=error" in r.headers["location"]
+    r = client.post("/profiles/1", data={**base, "persona_description": "x" * 4001}, follow_redirects=False)
+    assert "kind=error" in r.headers["location"]
+    s = db()
+    assert s.get(ModelProfile, 1).name == before and len(s.get(ModelProfile, 1).persona_description) <= 4000
+    assert client.patch("/api/v1/profiles/1", json={"style_notes": "x" * 4001}).status_code == 422
+
+
+def test_l11_tiktok_topup_asks_for_video(client, monkeypatch):
+    import random
+    from datetime import date
+
+    from app.models import PostingRule
+    from app.services import random_draft
+    from app.services.planner import plan_week
+
+    s = db()
+    rule = PostingRule(model_profile_id=1, platform="tiktok", posts_per_week=7, min_per_day=1, max_per_day=1,
+                       window_start="08:00", window_end="21:00", min_gap_minutes=180, timezone="UTC",
+                       is_active=True, auto_topup=True)
+    s.add(rule)
+    s.commit()
+    asked = []
+    monkeypatch.setattr(random_draft, "generate_random_drafts",
+                        lambda db_, req, client_: asked.append(req) or {"posts": []})
+    plan_week(s, rule, datetime(2031, 3, 1, 20, 0, tzinfo=timezone.utc), rng=random.Random(1),
+              start_day=date(2031, 3, 3), client=object())
+    assert asked and all(r.media_type.value == "video" for r in asked)

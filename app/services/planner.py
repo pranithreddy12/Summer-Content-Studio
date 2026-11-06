@@ -322,6 +322,7 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
                 out = generate_random_drafts(db, RandomDraftRequest(
                     platform=platform_enum, campaign="auto", count=1,
                     profile_id=rule.model_profile_id,
+                    media_type="video" if rule.platform == "tiktok" else None,
                 ), client)
                 result.topup_drafts.extend(out["posts"])
                 remaining_cap -= 1

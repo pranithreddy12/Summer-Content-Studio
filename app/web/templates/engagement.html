@@ -56,7 +56,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary" {% if settings.PUBLISHING_MODE != 'live' %}disabled{% endif %}
-                onclick="return confirm('Send this reply to @{{ c.author_username or 'this user' }} on Instagram now?')">Send reply</button>
+                data-confirm="Send this reply to @{{ c.author_username or 'this user' }} on Instagram now?" onclick="return confirm(this.dataset.confirm)">Send reply</button>
         <button type="submit" class="btn" formaction="/engagement/{{ c.id }}/draft">Draft with AI</button>
         <button type="submit" class="btn btn-danger" formaction="/engagement/{{ c.id }}/ignore" formnovalidate>Ignore</button>
       </div>

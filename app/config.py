@@ -152,7 +152,7 @@ class Settings(BaseSettings):
             raise ValueError("FANVUE_SCOPES must not include write:creator (prices and payouts stay in Fanvue)")
         return " ".join(v.split())
 
-    @field_validator("FANVUE_INBOX_POLL_SECONDS", "FANVUE_PPV_MIN_CENTS", "FANVUE_PPV_MAX_CENTS",
+    @field_validator("WORKER_INTERVAL_SECONDS", "FANVUE_INBOX_POLL_SECONDS", "FANVUE_PPV_MIN_CENTS", "FANVUE_PPV_MAX_CENTS",
                      "FAN_DATA_RETENTION_DAYS")
     @classmethod
     def validate_positive_int(cls, v: int) -> int:
@@ -167,11 +167,11 @@ class Settings(BaseSettings):
             raise ValueError("FANVUE_REPORT_WEEKDAY must be 0 (Monday) to 6 (Sunday)")
         return v
 
-    @field_validator("FANVUE_REPORT_HOUR")
+    @field_validator("PLANNER_RUN_HOUR", "FANVUE_REPORT_HOUR")
     @classmethod
     def validate_hour(cls, v: int) -> int:
         if not 0 <= v <= 23:
-            raise ValueError("FANVUE_REPORT_HOUR must be 0-23")
+            raise ValueError("must be 0-23")
         return v
 
     @model_validator(mode="after")
