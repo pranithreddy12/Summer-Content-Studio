@@ -287,8 +287,16 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Next:** C6 - docs (PLATFORM_SETUP Fanvue section, README, DEMO_PHASE3, security checklist), leak scan extended to fan text, delivery zip v0.3.0; then a whole-Phase-3 audit pass.
 
 
-## Phase 3 - C6 docs + hardening (2026-11-06, partly done)
+## Phase 3 - C6 docs + hardening (2026-11-06)
 **Done:** Privacy Policy and Terms now describe Fanvue (fan chat data, AI drafts, 90-day deletion, fan deletion requests; pinned by `test_site_pages.py`); Phase 3 end-to-end leak scan `test_hardening.py::test_phase3_no_fanvue_secret_or_fan_text_leaks` (mutations "send error unsanitised" and "AI reason in push" each fail it); `docs/SECURITY_CHECKLIST.md` Phase 3 table; `docs/PLATFORM_SETUP.md` §7 Fanvue for Lee; `docs/DEMO_PHASE3.md`; README Fanvue section; DEPLOY go-live step; version 0.3.0; zip script renamed to phase3-v0.3.0 with PLAN_PHASE3.md.
 **Tests:** full suite **677 passed**.
 **Flag for Lee (legal draft):** the Terms forbid "sexually explicit content", which may not fit Fanvue use; he must review the wording.
 **Not done yet:** build + verify the delivery zip (`tests/manual/build_delivery_zip.py`); the planned whole-Phase-3 audit pass.
+
+
+## Phase 3 - C6 finished: delivery zip + whole-Phase-3 audit (2026-11-06)
+**Files changed:** `tests/conftest.py` (autouse `no_real_network`: any real httpx connection - platforms, Anthropic SDK, Mistral, notifications - raises; MockTransport/TestClient unaffected), `tests/test_phase3_rules.py` (proves the guard bites).
+**Audit against PLAN_PHASE3 §17 build-complete:** C0-C6 done; 109 new Phase 3 test functions (≥ 90); "no live call in tests" was only by convention - now enforced by the guard (suite stayed green, so no test was touching the network); Fanvue-only media refused at create, generate, asset change, approve and publish; fan text leak scan in place; retention purge tested; every Fanvue request/response field used in `platforms/fanvue.py` and `fanvue_report.py` found in `PLATFORM_API_NOTES.md`; no `write:creator` scope (tested); prompt-injection test present; a chat stuck in `sending` after a crash can be reopened from the UI after 5 minutes.
+**Tests:** full suite **678 passed**. Delivery zip `dist/summer-ai-content-phase3-v0.3.0.zip` built and verified: lock file portable, deploy/ LF, no real secret or forbidden file, suite green from the extracted copy.
+**Not verified (needs Lee, L7-L10):** real Fanvue API behaviour, real AI draft quality, Telegram delivery of fan pushes and the digest.
+**Next:** L7-L10 when Lee's Fanvue developer app arrives; Lee reviews the Terms wording.

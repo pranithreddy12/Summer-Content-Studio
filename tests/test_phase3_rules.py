@@ -180,3 +180,11 @@ def test_fanvue_columns_default_to_null_and_false(client, halloween_asset):
     assert db.get(MediaAsset, halloween_asset["id"]).fanvue_only is False
     db.close()
     clear_settings_cache()
+
+
+def test_real_network_is_blocked_in_tests():
+    """The conftest guard behind PLAN_PHASE3 §17 "no live call in tests"."""
+    import httpx
+
+    with pytest.raises(RuntimeError, match="real network call"):
+        httpx.Client().get("https://api.fanvue.com/v1/users/me")

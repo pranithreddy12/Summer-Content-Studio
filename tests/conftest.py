@@ -239,3 +239,15 @@ def phase2(env):
         PUBLIC_BASE_URL="https://studio.example.com", INSTAGRAM_APP_ID="igapp",
         INSTAGRAM_APP_SECRET="ig-secret", TIKTOK_CLIENT_KEY="ttkey", TIKTOK_CLIENT_SECRET="tt-secret")
     return env
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch):
+    """PLAN_PHASE3 §17: no live call in tests. Any real httpx connection (platforms, Anthropic SDK,
+    Mistral, notifications) fails loudly; MockTransport and TestClient use other transports."""
+    import httpx
+
+    def refuse(self, request):
+        raise RuntimeError(f"real network call in a test: {request.method} {request.url.host}")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
