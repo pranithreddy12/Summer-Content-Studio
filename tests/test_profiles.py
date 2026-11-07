@@ -89,3 +89,24 @@ def test_patch_profile_lists_max_items(client):
         "communication_rules": ["rule"] * 31  # max 30
     })
     assert response.status_code == 422
+
+def test_second_profile_generates_without_code_changes(client, fake_claude):
+    """PLAN.md §20 #15: a new profile is data only (one row); generation uses its persona, not Summer's."""
+    from app.db import session_scope, utcnow
+    from app.models import ModelProfile
+
+    with session_scope() as db:
+        p = ModelProfile(slug="nova-dod15", name="Nova", handles={}, persona_description="Nova is a desert hiker.",
+                         tone_style="dry and calm", communication_rules=["Keep it short"],
+                         restricted_topics=["Politics"], style_notes="", cta_guidelines="", is_active=True,
+                         created_at=utcnow(), updated_at=utcnow())
+        db.add(p)
+        db.flush()
+        pid = p.id
+    resp = client.post("/api/v1/content/generate", json={
+        "profile_id": pid, "platform": "instagram", "content_type": "reel", "campaign": "halloween"})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["model_profile_id"] == pid
+    assert "Nova is a desert hiker." in fake_claude.last_system and "dry and calm" in fake_claude.last_system
+    summer = client.get("/api/v1/profiles/1").json()
+    assert summer["persona_description"] not in fake_claude.last_system

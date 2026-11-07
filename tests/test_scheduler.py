@@ -458,3 +458,19 @@ def test_nothing_happens_outside_the_window_in_any_mode(phase2, client, monkeypa
     r = sch.run_once(db(), datetime(2026, 11, 3, 8, 0, tzinfo=timezone.utc), http=NoHttp() if mode != "reminders" else
                      httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200))))
     assert r["due"] == 1
+
+
+def test_only_one_worker_per_database(tmp_path):
+    """Two workers would both refresh the rotating Fanvue token -> Fanvue revokes it (PLAN_PHASE3 P3-5)."""
+    from types import SimpleNamespace
+
+    from app.cli import worker_lock
+
+    s = SimpleNamespace(DATABASE_URL=f"sqlite:///{tmp_path}/app.db")
+    first = worker_lock(s)
+    assert first is not None
+    assert worker_lock(s) is None          # a second worker is refused
+    first.close()                          # first worker exits (or crashes: the OS frees the lock)
+    again = worker_lock(s)
+    assert again is not None
+    again.close()

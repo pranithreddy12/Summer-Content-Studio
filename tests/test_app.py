@@ -115,3 +115,14 @@ def test_api_prefix(client):
 
 # Helper to clear cache (imported here to avoid circular import in test)
 from app.config import clear_settings_cache
+
+def test_env_example_lists_every_setting():
+    """Lee configures the server from .env.example: every Settings field must appear there, and nothing stale."""
+    import re
+    from pathlib import Path
+
+    from app.config import Settings
+
+    listed = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", Path(".env.example").read_text(encoding="utf-8"), re.M))
+    assert set(Settings.model_fields) - listed == set()
+    assert listed - set(Settings.model_fields) == set()

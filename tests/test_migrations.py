@@ -126,3 +126,21 @@ def test_phase3_upgrade_keeps_assets_and_downgrades_cleanly(tmp_path):
         assert con.execute("SELECT filename FROM media_assets").fetchone() == ("a.jpg",)
     finally:
         con.close()
+
+
+def test_models_match_migrations(tmp_path):
+    """A column added to models.py without a migration would only break on the server."""
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from sqlalchemy import create_engine
+
+    import app.models  # noqa: F401
+    from app.db import Base
+
+    db = tmp_path / "match.db"
+    _run(db, "head", command.upgrade)
+    engine = create_engine(f"sqlite:///{db}")
+    with engine.connect() as conn:
+        diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+    engine.dispose()
+    assert diff == []

@@ -307,3 +307,11 @@ Source: `docs/AUDIT_2026-10-24.md`. Every fix has a regression test in `tests/te
 **Checked:** PLAN_PHASE2 §19 A, the open Low list, all Phase 3 edits to Phase 2 files (Fanvue-scoped, no IG/TikTok regressions).
 **Tests:** full suite **683 passed**; each new test fails when its fix is reverted. App + worker smoke on a scratch DB OK.
 **Still open:** L2 (sync dedupe vs moved files), L5 (`/health` schema check), L8 (`?msg=` spoof), L9 (needs live IG), L11 per-day cap; login throttling; metric-row pruning; Phase 2 live milestones L1-L6.
+
+
+## Overall audit, Phases 1-3 (2026-11-07)
+Report: `docs/AUDIT_OVERALL_2026-11-07.md`.
+**Files changed:** `app/cli.py` (single-worker file lock), `app/main.py` (`OverflowError` -> 422), `.env.example` (`UPLOAD_RATE_LIMIT_PER_MINUTE`), tests: `test_profiles.py` (DoD #15 second profile), `test_app.py` (.env.example matches Settings), `test_migrations.py` (models match migrations), `test_scheduler.py` (one worker per DB), `test_audit_fixes.py` (huge query numbers).
+**Checked:** all three offline DoDs; auth matrix over 109 route/method pairs (all 401 except /health and /m/); CSRF on every write (403); git history for keys; JSON fuzz 6,360 requests (44 -> 0 crash pages) and form fuzz 2,658 (0).
+**Tests:** full suite **688 passed**. Second-worker refusal checked with two real processes (Windows).
+**Still open:** see the report (live milestones need Lee; minor items L2, L5, L8, L9, L11 cap, login throttling, metric pruning).

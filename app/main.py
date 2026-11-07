@@ -122,6 +122,12 @@ def create_app() -> FastAPI:
             content={"error": {"code": "validation_error", "message": "; ".join(errors)}},
         )
 
+    @app.exception_handler(OverflowError)
+    async def overflow_handler(request: Request, exc: OverflowError):
+        """An id/page/offset above SQLite's 64-bit range (e.g. ?page=2**70): bad input, not a crash."""
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            content={"error": {"code": "validation_error", "message": "A number is out of range."}})
+
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         """Handle unexpected exceptions."""

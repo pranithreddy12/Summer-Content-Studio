@@ -542,3 +542,12 @@ def test_l11_tiktok_topup_asks_for_video(client, monkeypatch):
     plan_week(s, rule, datetime(2031, 3, 1, 20, 0, tzinfo=timezone.utc), rng=random.Random(1),
               start_day=date(2031, 3, 3), client=object())
     assert asked and all(r.media_type.value == "video" for r in asked)
+
+
+def test_huge_query_number_is_422_not_500(client):
+    """Overall audit 2026-11-07: 44 fuzz hits, one cause - an int above SQLite's 64-bit range."""
+    big = str(2 ** 70)
+    for url, q in (("/api/v1/posts", "asset_id"), ("/api/v1/assets", "offset"), ("/api/v1/comments", "post_id"),
+                   ("/posts", "page"), ("/assets", "page"), ("/generate", "asset_id")):
+        r = client.get(url, params={q: big})
+        assert r.status_code == 422, (url, r.status_code)

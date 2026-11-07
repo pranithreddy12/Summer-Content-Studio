@@ -116,6 +116,33 @@ def plan_week(profile_id: int, platform: str, seed) -> None:
             day = day + timedelta(days=1)
 
 
+def worker_lock(settings):
+    """Non-blocking exclusive lock on `<database file>.worker.lock` -> open file, or None if another
+    worker holds it."""
+    import tempfile
+    from pathlib import Path
+
+    url = settings.DATABASE_URL
+    path = Path(url[len("sqlite:///"):] + ".worker.lock") if url.startswith("sqlite:///") \
+        else Path(tempfile.gettempdir()) / "summer-worker.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
 @cli.command()
 @click.option("--once", "once", is_flag=True, help="Run one iteration and exit (for tests).")
 def worker(once) -> None:
@@ -146,6 +173,11 @@ def worker(once) -> None:
 
     from app.services import accounts as _accounts
 
+    lock = worker_lock(settings)  # held until the process exits (the OS frees it even on a crash)
+    if lock is None:
+        click.echo("Another worker is already running for this database. Refusing to start: two workers "
+                   "would both refresh the Fanvue token and Fanvue would revoke the connection.", err=True)
+        sys.exit(1)
     _accounts.is_worker = True  # the only process that refreshes rotating (Fanvue) tokens
 
     from app.platforms import http_client
