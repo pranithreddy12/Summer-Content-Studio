@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from app.platforms import PlatformError, instagram
 
 UID = "1784140000"
-SETTINGS = SimpleNamespace(INSTAGRAM_APP_ID="app123", INSTAGRAM_APP_SECRET=SecretStr("shh-secret"),
+SETTINGS = SimpleNamespace(INSTAGRAM_APP_ID="app123", INSTAGRAM_APP_SECRET=SecretStr("shh-secret"), INSTAGRAM_CONFIG_ID="cfg123",
                            PUBLIC_BASE_URL="https://studio.example.com")
 
 
@@ -188,50 +188,53 @@ def test_check_status_published_vs_not():
 
 def test_authorize_url():
     url = instagram.authorize_url(SETTINGS, "STATE1")
-    assert url.startswith("https://www.instagram.com/oauth/authorize?")
+    assert url.startswith("https://www.facebook.com/v27.0/dialog/oauth?")
     q = parse_qs(url.split("?", 1)[1])
     assert q["client_id"] == ["app123"] and q["state"] == ["STATE1"] and q["response_type"] == ["code"]
+    assert q["config_id"] == ["cfg123"] and q["override_default_response_type"] == ["true"]
     assert q["redirect_uri"] == ["https://studio.example.com/oauth/instagram/callback"]
-    assert q["scope"] == ["instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments"]
+    assert "scope" not in q   # permissions come from the configuration
 
 
-@pytest.mark.parametrize("short", [
-    {"access_token": "SHORT", "user_id": 111, "permissions": "instagram_business_basic"},
-    {"data": [{"access_token": "SHORT", "user_id": 111, "permissions": ["instagram_business_basic"]}]},
-])
-def test_exchange_code_short_then_long(short):
-    f = Fake({("POST", "/oauth/access_token"): short,
-              ("GET", "/access_token"): {"access_token": "LONG", "token_type": "bearer", "expires_in": 5184000},
-              ("GET", "/me"): {"user_id": "999", "username": "summerh_03"}})
+def test_exchange_code_then_assigned_account():
+    f = Fake({("GET", "/oauth/access_token"): {"access_token": "SUAT", "expires_in": 5184000},
+              ("GET", "/me/assigned_instagram_accounts"): {"data": [{"id": "999", "username": "summerh_03"}]}})
     ts = instagram.exchange_code(f.client(), SETTINGS, "CODE#_")
-    assert (ts.access_token, ts.external_user_id, ts.username) == ("LONG", "999", "summerh_03")
-    assert ts.expires_at is not None and ts.refresh_token is None
+    assert (ts.access_token, ts.external_user_id, ts.username) == ("SUAT", "999", "summerh_03")
+    assert ts.expires_at is not None and ts.refresh_token is None and ts.scopes == instagram.SCOPES
     first = f.calls[0]
-    assert first[3]["code"] == ["CODE"] and first[3]["client_secret"] == ["shh-secret"]
-    long = next(c for c in f.calls if c[1].endswith("/access_token") and c[0] == "GET")
-    assert long[2]["grant_type"] == "ig_exchange_token" and long[2]["access_token"] == "SHORT"
+    assert first[1].startswith("/v27.0/") and first[2]["code"] == "CODE" and first[2]["client_secret"] == "shh-secret"
+    assert f.calls[1][2]["access_token"] == "SUAT"
 
 
-def test_exchange_code_survives_me_failure():
-    f = Fake({("POST", "/oauth/access_token"): {"access_token": "S", "user_id": 111},
-              ("GET", "/access_token"): {"access_token": "L", "expires_in": 100}})
+def test_exchange_code_without_expiry_never_expires():
+    f = Fake({("GET", "/oauth/access_token"): {"access_token": "SUAT"},
+              ("GET", "/me/assigned_instagram_accounts"): {"data": [{"id": "999"}]}})
     ts = instagram.exchange_code(f.client(), SETTINGS, "C")
-    assert (ts.external_user_id, ts.username) == ("111", "unknown")
+    assert ts.expires_at is None and ts.username == "unknown"
+
+
+def test_exchange_code_no_assigned_account():
+    f = Fake({("GET", "/oauth/access_token"): {"access_token": "S"},
+              ("GET", "/me/assigned_instagram_accounts"): {"data": []}})
+    with pytest.raises(PlatformError) as e:
+        instagram.exchange_code(f.client(), SETTINGS, "C")
+    assert e.value.code == "no_instagram_account" and not e.value.transient
 
 
 def test_exchange_code_rejected():
-    f = Fake({("POST", "/oauth/access_token"): httpx.Response(400, json={"error": {"message": "Invalid code", "code": 100}})})
+    f = Fake({("GET", "/oauth/access_token"): httpx.Response(400, json={"error": {"message": "Invalid code", "code": 100}})})
     with pytest.raises(PlatformError) as e:
         instagram.exchange_code(f.client(), SETTINGS, "BAD")
     assert e.value.code == "bad_request"
 
 
-def test_refresh_uses_ig_refresh_token():
-    f = Fake({("GET", "/refresh_access_token"): {"access_token": "L2", "token_type": "bearer", "expires_in": 5184000}})
-    acct = SimpleNamespace(access_token="L1", scopes=["instagram_business_basic"], external_user_id="999", username="s")
-    ts = instagram.refresh(f.client(), SETTINGS, acct)
-    assert ts.access_token == "L2" and ts.external_user_id == "999"
-    assert f.calls[0][2]["grant_type"] == "ig_refresh_token" and f.calls[0][2]["access_token"] == "L1"
+def test_refresh_means_reconnect_and_makes_no_call():
+    f = Fake({})
+    acct = SimpleNamespace(access_token="L1", scopes=[], external_user_id="999", username="s")
+    with pytest.raises(PlatformError) as e:
+        instagram.refresh(f.client(), SETTINGS, acct)
+    assert e.value.code == "token_expired" and not e.value.transient and f.calls == []
 
 
 def test_comments_metrics_reply():

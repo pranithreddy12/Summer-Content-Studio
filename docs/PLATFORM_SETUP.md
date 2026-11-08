@@ -98,8 +98,8 @@ Official pages: <https://developers.facebook.com/docs/instagram-platform/instagr
    Meta also asks for a **Privacy Policy URL**, a **Terms of Service URL** and **user data deletion** instructions before an app can leave
    development mode (field names may differ): use the pages on your main domain, `https://<your-domain>/privacy`, `https://<your-domain>/terms` and
    `https://<your-domain>/privacy#data-deletion` (for example `https://itsmesummer.app/privacy`). The developer sets these pages up (`docs/DEPLOY.md`, section 12); you only check the text.
-6. Copy the **Instagram app ID** and **Instagram app secret** from the same page.
-   `.env`: `INSTAGRAM_APP_ID=…`, `INSTAGRAM_APP_SECRET=…`.
+6. **Unified Login (new Meta apps):** in the app dashboard create a **Facebook Login for Business configuration** with the permissions `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`, and add the redirect URL from step 5. Copy the **Configuration ID**. Also copy the **Meta app ID and app secret** (App settings → Basic; *not* an "Instagram app ID"). The Instagram account must belong to a business portfolio and have a role on the app.
+   `.env`: `INSTAGRAM_APP_ID=<Meta app id>`, `INSTAGRAM_APP_SECRET=<Meta app secret>`, `INSTAGRAM_CONFIG_ID=<configuration id>`.
 7. In our dashboard: **Accounts → Connect Instagram** → Instagram's own page asks you to log in and press **Allow**.
    The row turns **connected** and shows `@summerh_03`.
 

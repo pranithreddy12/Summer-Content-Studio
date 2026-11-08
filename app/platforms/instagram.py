@@ -1,8 +1,9 @@
-"""Instagram API with Instagram Login (host graph.instagram.com).
+"""Instagram API with Unified Login (Facebook Login for Business, host graph.facebook.com).
 
-Every call below is recorded in docs/PLATFORM_API_NOTES.md (checked 2026-10-23);
-items marked UNVERIFIED there are proven live in milestone L2.
-Docs: https://developers.facebook.com/docs/instagram-platform/content-publishing
+New Meta apps no longer get "Instagram Login"; Unified Login is the recommended path (2026-11-08).
+Every call below is recorded in docs/PLATFORM_API_NOTES.md; items marked UNVERIFIED there are
+proven live in milestone L2. The publish/poll/comment/reply calls keep the same paths as before.
+Docs: https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-unified-login/authentication
 """
 
 import time
@@ -13,9 +14,12 @@ import httpx
 
 from app.platforms import PlatformError, PublishResult, TokenSet, callback_url, json_or_empty, send
 
-API_VERSION = "v26.0"
-BASE = f"https://graph.instagram.com/{API_VERSION}"
-SCOPES = ["instagram_business_basic", "instagram_business_content_publish", "instagram_business_manage_comments"]
+API_VERSION = "v27.0"
+BASE = f"https://graph.facebook.com/{API_VERSION}"
+DIALOG = f"https://www.facebook.com/{API_VERSION}/dialog/oauth"
+# Permissions live in the Facebook Login for Business configuration (INSTAGRAM_CONFIG_ID), not in the URL;
+# this list is what we record as granted.
+SCOPES = ["instagram_basic", "instagram_content_publish", "instagram_manage_comments"]
 POLL_SECONDS = 60   # docs: once a minute ...
 POLL_MAX = 5        # ... for no more than 5 minutes
 _sleep = time.sleep  # tests replace this
@@ -61,55 +65,44 @@ def _token_and_expiry(body: dict, now: datetime) -> tuple[str, datetime | None]:
 
 
 def authorize_url(settings, state: str, code_challenge: str | None = None) -> str:
+    """Facebook Login for Business dialog. UNVERIFIED shape (docs only say the URL carries config_id)."""
     q = {"client_id": settings.INSTAGRAM_APP_ID, "redirect_uri": callback_url(settings, "instagram"),
-         "response_type": "code", "scope": ",".join(SCOPES), "state": state}
-    return "https://www.instagram.com/oauth/authorize?" + urlencode(q)
+         "response_type": "code", "state": state, "config_id": settings.INSTAGRAM_CONFIG_ID,
+         "override_default_response_type": "true"}
+    return DIALOG + "?" + urlencode(q)
+
+
+def _first_account(http, token: str) -> dict:
+    """The Instagram account assigned to the system-user token. With this token `/me` is the system user."""
+    rows = _get(http, "me/assigned_instagram_accounts", token, fields="id,username").get("data") or []
+    if not rows or not rows[0].get("id"):
+        raise PlatformError("no_instagram_account", "No Instagram account is assigned to this connection. "
+                            "Check the Facebook Login for Business configuration and the account's role.", False)
+    return rows[0]  # ponytail: first account only; one creator per profile, add a picker if that changes
 
 
 def exchange_code(http, settings, code: str, code_verifier: str | None = None) -> TokenSet:
-    """code -> short-lived token -> 60-day token (+ best-effort username lookup)."""
+    """code -> system-user access token (graph.facebook.com), then find the assigned Instagram account."""
     now = datetime.now(timezone.utc)
-    secret = settings.INSTAGRAM_APP_SECRET.get_secret_value()
-    resp = send(http, "POST", "https://api.instagram.com/oauth/access_token", data={
+    resp = send(http, "GET", f"{BASE}/oauth/access_token", params={
         "client_id": settings.INSTAGRAM_APP_ID,
-        "client_secret": secret,
-        "grant_type": "authorization_code",
+        "client_secret": settings.INSTAGRAM_APP_SECRET.get_secret_value(),
         "redirect_uri": callback_url(settings, "instagram"),
         "code": code.removesuffix("#_"),
     })
     _fail(resp)
-    body = json_or_empty(resp)
-    short = (body.get("data") or [body])[0]  # doc shows a data array; accept flat too
-    short_token, _ = _token_and_expiry(short, now)
-    user_id = str(short.get("user_id", ""))
-
-    resp = send(http, "GET", "https://graph.instagram.com/access_token", params={
-        "grant_type": "ig_exchange_token", "client_secret": secret, "access_token": short_token})
-    _fail(resp)
     token, expires = _token_and_expiry(json_or_empty(resp), now)
-
-    username = "unknown"
-    try:  # UNVERIFIED fields; never blocks connecting
-        me = _get(http, "me", token, fields="user_id,username")
-        username = me.get("username") or username
-        user_id = str(me.get("user_id") or user_id)
-    except PlatformError:
-        pass
-    granted = short.get("permissions") or SCOPES
-    if isinstance(granted, str):
-        granted = [p for p in granted.split(",") if p]
-    return TokenSet(token, None, expires, None, list(granted), user_id, username)
+    acct = _first_account(http, token)
+    return TokenSet(token, None, expires, None, list(SCOPES), str(acct["id"]), acct.get("username") or "unknown")
 
 
 def refresh(http, settings, account) -> TokenSet:
-    """Refresh a long-lived token (must be >= 24 h old and unexpired)."""
-    now = datetime.now(timezone.utc)
-    resp = send(http, "GET", "https://graph.instagram.com/refresh_access_token",
-                params={"grant_type": "ig_refresh_token", "access_token": account.access_token})
-    _fail(resp)
-    token, expires = _token_and_expiry(json_or_empty(resp), now)
-    return TokenSet(token, None, expires, None, list(account.scopes or SCOPES),
-                    account.external_user_id, account.username)
+    """System-user tokens default to never expiring (token_expires_at stays None, so this is not called).
+    Meta documents no simple refresh; the real one (POST /<client_business_id>/system_user_access_tokens)
+    needs the client business ID and business_management, which we do not store.
+    # ponytail: reconnect instead of refresh; add the business-id column + that call only if Lee's
+    # configuration issues 60-day tokens."""
+    raise PlatformError("token_expired", "Instagram needs to be reconnected (the connection has expired).", False)
 
 
 def _quota_reached(http, token: str, uid: str) -> bool:

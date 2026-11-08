@@ -39,7 +39,7 @@ REFRESH_SKEW = timedelta(minutes=5)  # refresh when less than this is left
 
 # Env vars each platform needs before OAuth can start (names only are ever shown in the UI)
 REQUIRED_ENV = {
-    "instagram": ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"),
+    "instagram": ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "INSTAGRAM_CONFIG_ID"),
     "tiktok": ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"),
     "fanvue": ("FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET"),
 }

@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     INSTAGRAM_APP_ID: Optional[str] = None
     INSTAGRAM_APP_SECRET: Optional[SecretStr] = None
+    INSTAGRAM_CONFIG_ID: Optional[str] = None  # Facebook Login for Business configuration id (not secret)
     TIKTOK_CLIENT_KEY: Optional[str] = None
     TIKTOK_CLIENT_SECRET: Optional[SecretStr] = None
     TIKTOK_POST_MODE: str = "inbox"  # inbox | direct (direct = mock-only until audited)
@@ -135,7 +136,7 @@ class Settings(BaseSettings):
         return v
 
     @field_validator(
-        "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET",
+        "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "INSTAGRAM_CONFIG_ID",
         "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
         "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY",
         "FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET", mode="before",

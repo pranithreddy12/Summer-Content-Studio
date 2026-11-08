@@ -17,21 +17,27 @@ def db():
     return get_session_factory()()
 
 
+def fake_refresh(monkeypatch, error=None):
+    """Instagram has no real refresh any more (it asks for a reconnect), so the account service's own refresh
+    logic is exercised through a stand-in platform refresh."""
+    from app.platforms import TokenSet, instagram
+
+    def refresh(http, settings, account):
+        if error:
+            raise error
+        return TokenSet("REFRESHED-TOKEN", None, utcnow() + timedelta(days=60), None, [], "999", "summerh_03")
+    monkeypatch.setattr(instagram, "refresh", refresh)
+
+
 def ig_http(calls=None, refresh_status=200):
-    """Instagram token endpoints."""
+    """Instagram token endpoints (refresh_status is kept for callers; refresh now always asks to reconnect)."""
     def handler(req: httpx.Request) -> httpx.Response:
         if calls is not None:
             calls.append(str(req.url.path))
         if req.url.path.endswith("/oauth/access_token"):
-            return httpx.Response(200, json={"access_token": "SHORT-TOKEN", "user_id": 111})
-        if req.url.path.endswith("/refresh_access_token"):
-            if refresh_status != 200:
-                return httpx.Response(refresh_status, json={"error": {"message": "expired", "code": 190}})
-            return httpx.Response(200, json={"access_token": "REFRESHED-TOKEN", "expires_in": 5184000})
-        if req.url.path.endswith("/access_token"):
             return httpx.Response(200, json={"access_token": "LONG-TOKEN-SECRET", "expires_in": 5184000})
-        if req.url.path.endswith("/me"):
-            return httpx.Response(200, json={"user_id": "999", "username": "summerh_03"})
+        if req.url.path.endswith("/me/assigned_instagram_accounts"):
+            return httpx.Response(200, json={"data": [{"id": "999", "username": "summerh_03"}]})
         return httpx.Response(404, json={})
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -57,12 +63,12 @@ def test_start_requires_configuration_and_names_missing_env_only(app, client):
     r = client.get("/oauth/instagram/start?profile_id=1", follow_redirects=False)
     assert r.status_code == 400 and r.json()["error"]["code"] == "not_configured"
     msg = r.json()["error"]["message"]
-    assert "INSTAGRAM_APP_ID" in msg and "PUBLIC_BASE_URL" in msg and "TOKEN_ENCRYPTION_KEY" in msg
+    assert "INSTAGRAM_APP_ID" in msg and "INSTAGRAM_CONFIG_ID" in msg and "PUBLIC_BASE_URL" in msg and "TOKEN_ENCRYPTION_KEY" in msg
 
 
 def test_start_redirects_with_state_and_stores_it(phase2, client):
     r = client.get("/oauth/instagram/start?profile_id=1", follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"].startswith("https://www.instagram.com/oauth/authorize?")
+    assert r.status_code == 302 and r.headers["location"].startswith("https://www.facebook.com/v27.0/dialog/oauth?")
     state = r.headers["location"].split("state=")[1].split("&")[0]
     assert db().get(OAuthState, state).platform == "instagram"
     assert len(state) >= 40  # secrets.token_urlsafe(32)
@@ -203,7 +209,7 @@ def make_account(expires_in=timedelta(days=30), status="connected"):
     d = db()
     a = PlatformAccount(model_profile_id=1, platform="instagram", external_user_id="999", username="summerh_03",
                         access_token_enc=accounts.encrypt("OLD-TOKEN"), refresh_token_enc=None,
-                        token_expires_at=utcnow() + expires_in, scopes=["instagram_business_basic"], status=status)
+                        token_expires_at=utcnow() + expires_in, scopes=["instagram_basic"], status=status)
     d.add(a)
     d.commit()
     return a.id
@@ -216,7 +222,8 @@ def test_valid_token_is_not_refreshed_when_far_from_expiry(phase2, app):
     assert accounts.get_valid_token(d, acct, ig_http(calls)) == "OLD-TOKEN" and calls == []
 
 
-def test_token_close_to_expiry_is_refreshed_and_stored_encrypted(phase2, app):
+def test_token_close_to_expiry_is_refreshed_and_stored_encrypted(phase2, app, monkeypatch):
+    fake_refresh(monkeypatch)
     d = db()
     acct = d.get(PlatformAccount, make_account(expires_in=timedelta(minutes=2)))
     assert accounts.get_valid_token(d, acct, ig_http()) == "REFRESHED-TOKEN"
@@ -242,6 +249,23 @@ def test_refresh_rejected_marks_expired_and_pushes_once(phase2, app):
     with pytest.raises(PlatformError) as e2:
         accounts.get_valid_token(db(), db().get(PlatformAccount, acct.id), ig_http())
     assert e2.value.code == "account_not_connected"
+
+
+def test_real_instagram_refresh_asks_to_reconnect(phase2, app):
+    d = db()
+    acct = d.get(PlatformAccount, make_account(expires_in=timedelta(minutes=2)))
+    with pytest.raises(PlatformError) as e:
+        accounts.get_valid_token(d, acct, ig_http())
+    assert e.value.code == "token_expired" and db().get(PlatformAccount, acct.id).status == "expired"
+
+
+def test_token_without_expiry_is_used_as_is(phase2, app):
+    d = db()
+    acct = d.get(PlatformAccount, make_account())
+    acct.token_expires_at = None
+    d.commit()
+    assert accounts.get_valid_token(d, acct, ig_http()) == "OLD-TOKEN"
+    assert accounts.accounts_expiring(db(), utcnow(), timedelta(days=3650)) == []
 
 
 def test_accounts_expiring_query(phase2, app):

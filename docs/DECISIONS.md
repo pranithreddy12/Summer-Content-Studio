@@ -222,3 +222,11 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **Link names** are lowercase letters, digits and dashes, 3-60 chars, at most 20 links; links Lee makes in the Fanvue app show up too after the next 6-hourly sync.
 - **Weekly digest:** Monday from 09:00 local, one push per ISO week (a sent key is never re-sent); the stage runs at most hourly so a failing push or Fanvue error is not retried every minute. The text carries amounts and link names only, never fan data.
 - **Links are shown as cards, not a table:** the 375 px check showed the table squeezing names to one letter per line and the URL box to "htt".
+
+## Instagram moved to Unified Login (2026-11-08)
+- **Why:** Lee's new Meta app only offers Unified Login (Instagram Login is not available to new apps). Audit and approval in the session; only `app/platforms/instagram.py` and its tests really change. Publish, poll, comment and reply calls keep their paths (host is now `graph.facebook.com/v27.0`).
+- **No DB migration:** Meta says to store the client business ID for its token-management API, but that call is undocumented, so we do not store it yet. Add a column only when the refresh call is proven live (L2).
+- **Refresh = reconnect:** Meta says system-user tokens default to never expire and documents no simple refresh (the real one needs the stored client business ID + `business_management`). `refresh()` raises `token_expired`, so an expiring token flags the account and Lee reconnects. Set the configuration to never expire.
+- **New setting `INSTAGRAM_CONFIG_ID`;** `INSTAGRAM_APP_ID/SECRET` are now the **Meta** app id/secret.
+- **Unverified until the first live connection (L2):** the dialog URL shape, `/me/assigned_instagram_accounts` for a Creator account, and the refresh behaviour.
+

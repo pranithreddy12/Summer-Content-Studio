@@ -8,7 +8,22 @@ Checked: 2026-10-23.
 
 ---
 
-## Instagram — Instagram API with Instagram Login (host `graph.instagram.com`)
+## Instagram — Instagram API with Unified Login (host `graph.facebook.com`) — migrated 2026-11-08
+
+New Meta apps no longer offer Instagram Login; Meta recommends Unified Login for new integrations (overview page). Auth sources: `.../instagram-api-with-unified-login/authentication` and `/permissions` (VERIFIED-DOC 2026-11-08). The old Instagram-Login rows below the auth block (create container ... reply) keep the same paths; only host, version and token changed.
+
+| Item | Detail | Status |
+|---|---|---|
+| Base | `https://graph.facebook.com/v27.0/…` (`API_VERSION` constant; the auth page's examples use v27.0) | VERIFIED-DOC |
+| Login | Facebook Login for Business dialog with `config_id` (+ `response_type=code`, `override_default_response_type=true` seen in developer reports); permissions come from the configuration, not a `scope` param | URL shape **UNVERIFIED** (docs only say the URL carries `config_id`) |
+| Permissions | `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments` (configuration) | VERIFIED-DOC |
+| Code exchange | `GET /v27.0/oauth/access_token?client_id=<META app id>&client_secret=<META app secret>&code` -> Business Integration System User token (SUAT); lifetime chosen in the configuration | VERIFIED-DOC (we also send `redirect_uri`, standard for Facebook OAuth: **UNVERIFIED** here) |
+| Account id | `GET /me/assigned_instagram_accounts?fields=id,username` (`/me` is the system user). Needs `instagram_basic` only (`business_management` is for the token-management API, not discovery) | endpoint VERIFIED-DOC; Creator account result **UNVERIFIED** (L2) |
+| Refresh | Meta points to the "Business Integration System User Access Token Management API" and says to store the client business ID; no refresh call is described. System-user tokens **default to never expiring** (60 days only if the configuration says so); the documented extension is `POST /<client_business_id>/system_user_access_tokens` (needs `business_management`, `appsecret_proof`, the stored client business ID). We do not store the business ID, so `refresh()` raises `token_expired` and Lee reconnects. **Set the configuration to never expire** | VERIFIED-DOC (FLB page 2026-11-08) |
+| Page | Not mentioned by the authentication page | VERIFIED-DOC (absence) |
+| Access | Standard Access covers accounts with a role on the app; Advanced needs App Review + Live mode only for other people's accounts | VERIFIED-DOC |
+
+**Rows below from "Create container" to "Access level" are unchanged by the migration. The rows Base, Account, Scopes, Authorize, Short-lived token, Long-lived token, Refresh and Username lookup are Instagram Login and are SUPERSEDED by the table above (kept for history).**
 
 Docs: https://developers.facebook.com/docs/instagram-platform/content-publishing · https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login · https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/comment-moderation
 

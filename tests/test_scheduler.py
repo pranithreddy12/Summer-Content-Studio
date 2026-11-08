@@ -14,7 +14,7 @@ import app.services.scheduler as sch
 from app.models import ContentPost, NotificationLog, PlatformAccount, PostingRule, PublishAttempt
 from app.platforms import PlatformError, PublishResult
 from app.services import accounts
-from tests.test_accounts import ig_http
+from tests.test_accounts import fake_refresh, ig_http
 from tests.test_publish_live import (NOON, JPG, MP4, NoHttp, db, live, make_account, make_post,  # noqa: F401
                                      post_of)
 
@@ -161,7 +161,8 @@ def add_account(platform="instagram", expires=NOON + timedelta(days=3), refresh_
     d.commit()
 
 
-def test_instagram_token_inside_seven_days_is_refreshed_others_are_not(phase2, client):
+def test_instagram_token_inside_seven_days_is_refreshed_others_are_not(phase2, client, monkeypatch):
+    fake_refresh(monkeypatch)
     phase2(PUBLISHING_MODE="live")
     add_account("instagram", NOON + timedelta(days=3))
     add_account("tiktok", NOON + timedelta(days=3))                    # tiktok window is 24 h, so untouched
@@ -187,15 +188,18 @@ def test_rejected_refresh_expires_the_account_and_alerts(phase2, client):
     assert db().query(NotificationLog).filter_by(event="account_attention").count() == 1
 
 
-def test_failed_refresh_is_not_retried_every_loop(phase2, client):
+def test_failed_refresh_is_not_retried_every_loop(phase2, client, monkeypatch):
+    from app.platforms import PlatformError, instagram
+
     phase2(PUBLISHING_MODE="live")
     add_account("instagram", NOON + timedelta(days=2))
     seen = []
 
-    def flaky(req):
-        seen.append(req.url.path)
-        return httpx.Response(503)
-    http = httpx.Client(transport=httpx.MockTransport(flaky))
+    def flaky(http, settings, account):
+        seen.append(1)
+        raise PlatformError("upstream_error", "down", True)
+    monkeypatch.setattr(instagram, "refresh", flaky)
+    http = NoHttp()
     assert run(NOON, http)["tokens"]["failed"] == 1
     assert run(NOON + timedelta(minutes=1), http)["tokens"] == {"refreshed": 0, "failed": 0}   # throttled
     assert run(NOON + timedelta(minutes=31), http)["tokens"]["failed"] == 1                    # tried again later
