@@ -115,6 +115,33 @@
       </div>
     </div>
 
+    {% set fr = profile.fan_rules or {} %}
+    <div class="form-row">
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">Fanvue chat: never say (one per line)</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="fan_never_say" id="fan_never_say" rows="5">{{ (fr.never_say or []) | join('\n') }}</textarea>
+          <div class="field-hint">An AI reply draft that contains one of these is not offered; you get the chat to answer yourself.</div>
+        </div>
+      </div>
+
+      <div class="section-block" style="margin-bottom:14px;">
+        <div class="block-label">Fanvue chat: topics that need you (one per line)</div>
+        <div class="form-group" style="margin-bottom:0;">
+          <textarea name="fan_escalate_topics" id="fan_escalate_topics" rows="5">{{ (fr.escalate_topics or []) | join('\n') }}</textarea>
+          <div class="field-hint">A fan message mentioning one gets no AI draft and sends you a push. Age, "are you real", meeting up, refunds, self-harm and legal threats are always on.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-block" style="margin-bottom:14px;">
+      <div class="block-label">Fanvue chat: notes for the AI</div>
+      <div class="form-group" style="margin-bottom:0;">
+        <textarea name="fan_notes" id="fan_notes" rows="3" maxlength="1000">{{ fr.notes or '' }}</textarea>
+        <div class="field-hint">How Summer talks to fans, things to mention or avoid (max 1000 characters).</div>
+      </div>
+    </div>
+
     <div class="section-block">
       <div class="block-label">Handles (read-only)</div>
       <div class="profile-handles">

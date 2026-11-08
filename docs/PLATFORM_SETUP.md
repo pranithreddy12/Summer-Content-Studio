@@ -190,7 +190,8 @@ get **no** AI draft; you get a push instead.
 **Answers we still need from you (defaults are already set and can be changed later):**
 - Fanvue's rules: if you know of any rule about AI creators or automated chat, send it. Default: you send every reply.
 - Things Summer must **never say** in chats, topics that must always come to you, and ~5 example fan messages with how
-  she would answer. Default: the safety list above.
+  she would answer. Default: the safety list above. You can type the lists yourself on **Profiles → Summer**, in the
+  three "Fanvue chat" boxes (never say, topics that need you, notes for the AI), then press *Save Profile*.
 - Price range for paid media in chats. Default: 3.00 – 50.00 USD.
 - Which media is **Fanvue only** (never on Instagram/TikTok). Tick *Fanvue only* on each item's page.
 - Check that Summer's Fanvue **bio says clearly that she is AI-generated** (Fanvue's guidelines require a clear disclosure;

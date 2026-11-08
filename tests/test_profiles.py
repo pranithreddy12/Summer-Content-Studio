@@ -110,3 +110,47 @@ def test_second_profile_generates_without_code_changes(client, fake_claude):
     assert "Nova is a desert hiker." in fake_claude.last_system and "dry and calm" in fake_claude.last_system
     summer = client.get("/api/v1/profiles/1").json()
     assert summer["persona_description"] not in fake_claude.last_system
+
+
+# ---- Fanvue fan rules (PLAN_PHASE3 H5): editable in the API and on the Profile page --------
+
+def test_fan_rules_api_save_validate_clear(client):
+    rules = {"never_say": ["discount", "free"], "escalate_topics": ["custom video"], "notes": "Keep it light."}
+    r = client.patch("/api/v1/profiles/1", json={"fan_rules": rules})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/v1/profiles/1").json()["fan_rules"] == rules
+    for bad in ({"never_say": ["x"] * 51}, {"never_say": ["y" * 101]}, {"escalate_topics": [""]},
+                {"notes": "z" * 1001}, {"price": 5}, {"never_say": "free"}):
+        assert client.patch("/api/v1/profiles/1", json={"fan_rules": bad}).status_code == 422, bad
+    assert client.get("/api/v1/profiles/1").json()["fan_rules"] == rules     # bad input changed nothing
+    assert client.patch("/api/v1/profiles/1", json={"fan_rules": None}).status_code == 200
+    assert client.get("/api/v1/profiles/1").json()["fan_rules"] is None
+
+
+def test_fan_rules_form_saves_and_drive_the_inbox(client):
+    from app.db import session_scope
+    from app.models import ModelProfile
+    from app.services.fan_inbox import draft_problem, needs_escalation
+
+    form = {"name": "Summer", "persona_description": "p", "tone_style": "t", "communication_rules": "",
+            "restricted_topics": "", "style_notes": "", "cta_guidelines": "", "is_active": "true",
+            "fan_never_say": "discount\n\n  free trial  \n", "fan_escalate_topics": "custom video\n<script>x</script>",
+            "fan_notes": "Be sweet."}
+    r = client.post("/profiles/1", data=form, follow_redirects=False)
+    assert r.status_code == 303 and "kind=error" not in r.headers["location"]
+    with session_scope() as db:
+        rules = db.get(ModelProfile, 1).fan_rules
+    assert rules == {"never_say": ["discount", "free trial"], "escalate_topics": ["custom video", "<script>x</script>"],
+                     "notes": "Be sweet."}
+    # the saved rules take effect: Lee's topic escalates, Lee's word blocks a draft
+    assert needs_escalation("can you make me a Custom Video?", rules) == "mentions 'custom video'"
+    assert needs_escalation("hi babe", rules) is None
+    assert draft_problem("here is a free trial for you", rules) == "draft used a never-say word"
+    page = client.get("/profiles/1").text
+    assert "custom video" in page and "<script>x</script>" not in page and "&lt;script&gt;" in page
+    # too many words is reported, not saved
+    r = client.post("/profiles/1", data={**form, "fan_never_say": "\n".join(f"w{i}" for i in range(51))},
+                    follow_redirects=False)
+    assert "kind=error" in r.headers["location"]
+    with session_scope() as db:
+        assert db.get(ModelProfile, 1).fan_rules["never_say"] == ["discount", "free trial"]

@@ -1106,6 +1106,9 @@ async def profile_update(
     style_notes: str = Form(""),
     cta_guidelines: str = Form(""),
     is_active: bool = Form(False),
+    fan_never_say: str = Form(""),
+    fan_escalate_topics: str = Form(""),
+    fan_notes: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Update profile."""
@@ -1122,7 +1125,10 @@ async def profile_update(
             name=name.strip(), persona_description=persona_description, tone_style=tone_style,
             communication_rules=[r.strip() for r in communication_rules.splitlines() if r.strip()],
             restricted_topics=[r.strip() for r in restricted_topics.splitlines() if r.strip()],
-            style_notes=style_notes, cta_guidelines=cta_guidelines, is_active=is_active)
+            style_notes=style_notes, cta_guidelines=cta_guidelines, is_active=is_active,
+            fan_rules={"never_say": [w.strip() for w in fan_never_say.splitlines() if w.strip()],
+                       "escalate_topics": [w.strip() for w in fan_escalate_topics.splitlines() if w.strip()],
+                       "notes": fan_notes})
     except ValidationError as e:
         problems = "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors())
         return redirect_with_flash(f"/profiles/{profile_id}", problems, "error")

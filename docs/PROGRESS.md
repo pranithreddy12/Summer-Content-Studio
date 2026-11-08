@@ -315,3 +315,9 @@ Report: `docs/AUDIT_OVERALL_2026-11-07.md`.
 **Checked:** all three offline DoDs; auth matrix over 109 route/method pairs (all 401 except /health and /m/); CSRF on every write (403); git history for keys; JSON fuzz 6,360 requests (44 -> 0 crash pages) and form fuzz 2,658 (0).
 **Tests:** full suite **688 passed**. Second-worker refusal checked with two real processes (Windows).
 **Still open:** see the report (live milestones need Lee; minor items L2, L5, L8, L9, L11 cap, login throttling, metric pruning).
+
+
+## Fanvue fan rules editable + finish guide (2026-11-07)
+**Gap found while writing the finish guide:** Lee's Fanvue lists (PLAN_PHASE3 H5: never-say words, topics to escalate, notes) were stored in `model_profiles.fan_rules` and used by the inbox, but had no API field or dashboard field - only SQL could set them.
+**Files changed:** `app/schemas.py` (`FanRules`: never_say / escalate_topics up to 50 items of 1-100 chars, notes up to 1000, unknown keys refused; `ProfileUpdate.fan_rules` nullable; `ProfileOut.fan_rules`), `app/web/routes.py` + `app/web/templates/profile.html` (three "Fanvue chat" boxes on the Profile page), `docs/PLATFORM_SETUP.md` §7, new `docs/FINISH_PHASES_2_3.md` (step-by-step to finish L1-L10), `tests/test_profiles.py` (+2: API save/validate/clear; form save, escaping, and the saved rules really change escalation and draft refusal).
+**Tests:** full suite **690 passed**; both new tests fail when the schema field is removed. Real browser (375 px, scratch DB): no horizontal overflow, save shows the success banner and the boxes refill with what was typed.

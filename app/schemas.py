@@ -68,6 +68,7 @@ class ProfileOut(BaseSchema):
     style_notes: str
     cta_guidelines: str
     is_active: bool
+    fan_rules: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 
@@ -83,8 +84,18 @@ class ProfileOut(BaseSchema):
 
 PROFILE_TEXT_MAX = 4000
 
+FanWord = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class FanRules(BaseSchema):
+    """Lee's Fanvue chat rules (PLAN_PHASE3 H5). The fixed safety escalations always apply on top."""
+    never_say: List[FanWord] = Field(default_factory=list, max_length=50)        # a draft containing one is refused
+    escalate_topics: List[FanWord] = Field(default_factory=list, max_length=50)  # a fan message mentioning one goes to Lee
+    notes: str = Field("", max_length=1000)                                      # extra guidance in the AI prompt
+
 
 class ProfileUpdate(NonNullUpdate, BaseSchema):
+    nullable: ClassVar[frozenset] = frozenset({"fan_rules"})
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     # these go into every AI prompt: capped so a paste can't blow up the cost (audit L10)
     persona_description: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
@@ -94,6 +105,7 @@ class ProfileUpdate(NonNullUpdate, BaseSchema):
     style_notes: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
     cta_guidelines: Optional[str] = Field(None, max_length=PROFILE_TEXT_MAX)
     is_active: Optional[bool] = None
+    fan_rules: Optional[FanRules] = None
 
     @field_validator("communication_rules", "restricted_topics", mode="before")
     @classmethod
