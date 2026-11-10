@@ -12,11 +12,12 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import platforms
 from app.config import get_settings
 from app.models import ContentPost, MediaAsset, MediaType, ModelProfile
 from app.schemas import GenerateRequest, RandomDraftRequest
 from app.security import resolve_asset_file
-from app.services import AppError
+from app.services import AppError, dropbox_link
 from app.services.assets import list_assets
 from app.services.generation import generate_draft
 from app.services.posts import get_post
@@ -72,8 +73,18 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict
         raise AppError("not_found", "No active model profile.", 404)
 
     pool = eligible_assets(db, req.media_type.value if req.media_type else None, req.tag, req.include_used)
-    available = len(pool)
     posts, errors = [], []
+    if len(pool) < req.count and not req.tag and dropbox_link.configured():
+        # Dropbox folder link: fetch just the missing files (a tag filter can't match untagged pulls)
+        try:
+            pulled = dropbox_link.pull(db, req.count - len(pool), req.media_type.value if req.media_type else None)
+            errors += [{"asset_id": None, "filename": e["path"], "status": 502, "code": "dropbox_error",
+                        "message": e["message"]} for e in pulled["errors"]]
+        except (AppError, platforms.PlatformError) as e:
+            errors.append({"asset_id": None, "filename": "", "status": getattr(e, "status", 502),
+                           "code": getattr(e, "code", "dropbox_error"), "message": getattr(e, "message", str(e))})
+        pool = eligible_assets(db, req.media_type.value if req.media_type else None, req.tag, req.include_used)
+    available = len(pool)
     for i in range(req.count):
         if not pool:
             break

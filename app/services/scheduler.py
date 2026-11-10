@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.config import get_settings, publishing_mode
 from app.db import utcnow
 from app.models import ContentPost, PostStatus, PostingRule, WorkerHeartbeat
+from app.services import dropbox_link
 
 logger = logging.getLogger("app.services.scheduler")
 
@@ -387,6 +388,8 @@ def run_once(db, now, http=None) -> dict:
         stage("fanvue_links", lambda: fanvue_links_stage(db, now, http, result))
         stage("fanvue_digest", lambda: fanvue_digest_stage(db, now, http, result))
     stage("fan_purge", lambda: fan_purge_stage(db, now, result))
+    if dropbox_link.configured(settings):
+        stage("dropbox_purge", lambda: result.__setitem__("dropbox_purged", dropbox_link.purge_posted(db)))
     if settings.AUTO_PLAN_ENABLED:
         def tick() -> None:
             hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()

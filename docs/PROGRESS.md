@@ -328,3 +328,14 @@ Report: `docs/AUDIT_OVERALL_2026-11-07.md`.
 **Files changed:** `app/platforms/instagram.py` (host `graph.facebook.com/v27.0`; `authorize_url` = Facebook Login for Business dialog with `config_id`; `exchange_code` = one code exchange + `/me/assigned_instagram_accounts`; `refresh` = `fb_exchange_token`, refused -> reconnect), `app/config.py` + `.env.example` + `app/services/accounts.py` (`INSTAGRAM_CONFIG_ID`), tests (`test_platform_instagram.py` auth tests rewritten, `test_accounts.py` fake endpoints, `conftest.py`), `docs/PLATFORM_API_NOTES.md`, `docs/PLATFORM_SETUP.md` §4a step 6. Publish/poll/comment/reply code unchanged. No DB migration.
 **Tests:** full suite green (692 passed, 0 failed) after the verification fixes (refresh now raises token_expired; service-level refresh tests use a stand-in). The first run with `-x` stopped at `test_security.py::test_dashboard_generate_rate_limited`, which passed alone and in the full rerun (looks timing-dependent, unrelated to Instagram).
 **Not proven (live milestone L2):** dialog URL shape (versioned vs unversioned `/dialog/oauth`), `/me/assigned_instagram_accounts` for a Creator account, refresh behaviour. **Next step:** create the Facebook Login for Business configuration in Meta, set `INSTAGRAM_CONFIG_ID`, connect on a call with Lee.
+
+
+## Dropbox folder link: pull on demand, delete after posting (2026-11-09)
+**Why:** Lee's folder may be too big to mirror. Opt-in alternative to the rclone sync; decisions in `docs/DECISIONS.md`.
+**Files changed:** new `app/services/dropbox_link.py` (list shared folder, download one file, `purge_posted`); `app/config.py` + `.env.example` (`DROPBOX_FOLDER_URL/APP_KEY/APP_SECRET/REFRESH_TOKEN`); `app/services/random_draft.py` (pulls only the missing files); `app/services/scheduler.py` (stage `dropbox_purge`); new `tests/test_dropbox_link.py` (+7, fake Dropbox via MockTransport); `tests/conftest.py`; `docs/PLATFORM_SETUP.md`, `docs/PLATFORM_API_NOTES.md`, `docs/DECISIONS.md`. No DB migration (path kept in `source_ref`).
+**Tests:** full suite **699 passed, 0 failed** (692 + 7).
+**Not proven:** every Dropbox call shape (forum posts only), the scopes, and that our own app's token can read a link to Lee's folder - proven at the first live pull. **Next step:** create the Dropbox app, set the four settings on the server, press random drafts.
+
+
+## Phase 3 audit + Dropbox link verified (2026-11-10)
+Report: `docs/AUDIT_PHASE3_2026-11-10.md`. Two Fanvue reply race conditions fixed (`app/services/fan_inbox.py`, +2 tests in `tests/test_fan_inbox.py`, both fail without the fix). Full suite **701 passed, 0 failed** (includes the 7 Dropbox link tests). Known limit of the Dropbox link: a post stuck in `failed` keeps its pulled file until it is archived or published.

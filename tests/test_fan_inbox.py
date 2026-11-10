@@ -312,6 +312,29 @@ def test_send_reply_once(live):
     assert e.value.code == "already_sent" and len(fake.sends()) == 1
 
 
+def test_sync_during_a_send_does_not_reopen_the_chat(live):
+    """A big PPV upload can take minutes; a worker sync in that window must not flip 'sending' back to
+    needs_reply (a second Send press would then double-message the fan)."""
+    synced()
+    d = db()
+    d.query(FanChat).update({"status": "sending"})
+    d.commit()
+    synced(Fake(messages={"fan-1": [msg("m9", "hello again?", 9), msg("m2", "hey", 5)]}))
+    assert the_chat().status == "sending"
+
+
+def test_send_survives_sync_having_stored_the_sent_message(live):
+    """Sync can fetch our own just-sent message before send_reply commits it; no unique-key crash."""
+    synced()
+    chat_id = the_chat().id
+    d = db()
+    d.add(FanMessage(chat_id=chat_id, fanvue_message_uuid="sent-1", direction="out", text="thank you",
+                     sent_at=NOON, sent_via="fanvue", created_at=NOON))
+    d.commit()
+    chat = inbox.send_reply(db(), chat_id, "thank you", Fake().client(), now=NOON)
+    assert chat.status == "replied" and db().query(FanMessage).filter_by(fanvue_message_uuid="sent-1").count() == 1
+
+
 def test_failed_send_restores_status_and_hints_on_timeouts(live):
     synced()
     chat_id = the_chat().id

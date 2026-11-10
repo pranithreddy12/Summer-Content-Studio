@@ -117,7 +117,7 @@ Decisions from the build plan (Â§2) plus every deviation made during construct
 ## Random draft batch (added 2026-10-18)
 - `app/services/random_draft.py`: random pick among active, unused, uploaded/synced assets whose file exists (placeholder videos < 1 KB skipped); one `generate_draft` per asset (so image/frame input, idempotency and logging are reused). Max 5 per request; stops at the first provider error and keeps earlier drafts; a `batch_key` makes a resubmitted form reuse existing drafts instead of paying again.
 - Still human-in-the-loop: drafts only, nothing approved or published automatically (consistent with PLAN section 10: no unreviewed automation).
-- Dropbox: random selection needs files on disk (`MEDIA_SYNC_DIR`). Reading a Dropbox folder through its share link would need the Dropbox API (app key + token) - not built; candidate for Phase 2.
+- Dropbox: random selection needs files on disk (`MEDIA_SYNC_DIR`). Reading a Dropbox folder through its share link would need the Dropbox API (app key + token) - not built; candidate for Phase 2. (Built 2026-11-09, see "Dropbox folder link" at the end.)
 
 ## Permanent asset deletion (added 2026-10-20)
 - `delete_asset_permanently` (services/assets.py). Allowed for `upload` (row + uploaded file, path containment-checked) and `external_url` (row only). `local_sync` is refused (409 `synced_asset`): the Dropbox folder is read-only to the app and a deleted row would be re-registered by the next Sync; archive keeps the relpath registered so it is skipped.
@@ -230,3 +230,12 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - **New setting `INSTAGRAM_CONFIG_ID`;** `INSTAGRAM_APP_ID/SECRET` are now the **Meta** app id/secret.
 - **Unverified until the first live connection (L2):** the dialog URL shape, `/me/assigned_instagram_accounts` for a Creator account, and the refresh behaviour.
 
+
+
+## Dropbox folder link: pull on demand, delete after posting (2026-11-09)
+**Why:** Lee's Dropbox folder may be too big to mirror with rclone. Instead the app reads a shared FOLDER link through the Dropbox API and downloads only the files drafts need. Opt-in: all four `DROPBOX_*` settings must be set; otherwise nothing changes and the rclone path keeps working.
+- `app/services/dropbox_link.py`: `list_folder` (walks sub-folders; recursive listing is unsupported with shared links) and `sharing/get_shared_link_file`, access token from a refresh token (no token stored in the DB). Files become normal `upload` assets, so publishing, previews, Claude image input and the "external_url is never publishable" rule are untouched. The Dropbox path is kept in `source_ref` (`dropbox:/path`), so a file is never pulled twice, even after it is deleted.
+- Hook: `generate_random_drafts` pulls only the missing files (`count` minus what the library already holds), so the planner's draft top-up uses it too. Skipped when a tag filter is given (pulled files are untagged). Dropbox errors are returned in the draft `errors`, or raised if nothing could be drafted.
+- Cleanup: the worker stage `dropbox_purge` deletes the file and archives the row once every post using it is published / sent to drafts / archived. Unused or still-queued files are kept. Disk guard: `MIN_FREE_DISK_GB` as for sync.
+- Humans still approve every post; nothing here publishes.
+- **UNVERIFIED** (Dropbox's own reference pages would not load; shapes taken from developer-forum posts): `shared_link: {"url": ...}` in `list_folder`, `path` relative to the link, the `Dropbox-API-Arg` header for `get_shared_link_file`, required scopes (`files.metadata.read`, `files.content.read`, `sharing.read`), and that a token from our own Dropbox app can read a link to Lee's folder. Proven at the first live pull.

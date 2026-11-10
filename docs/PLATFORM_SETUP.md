@@ -208,3 +208,13 @@ get **no** AI draft; you get a push instead.
 - [ ] Fanvue app: Client ID + secret, redirect URI added, scopes ticked (section 7) · AI disclosure in the Fanvue bio
 - [ ] Which time zone you mean by "GMT" (UK clock time, i.e. summer-time aware, or fixed GMT?) and whether the
       10 weekly posts are all videos (TikTok drafts accept videos only)
+
+
+## Dropbox folder link (no bulk sync)
+Use this instead of the rclone sync when the folder is large. Secrets are typed on the server (`nano /srv/summer/app/.env`), never pasted in chat.
+1. https://www.dropbox.com/developers/apps -> Create app -> Scoped access -> Full Dropbox -> name it. On the Permissions tab tick `files.metadata.read`, `files.content.read`, `sharing.read` and press Submit.
+2. Lee sends the shared FOLDER link (Dropbox -> Share -> Create link, "anyone with the link can view"). Put it in `.env` as `DROPBOX_FOLDER_URL`.
+3. Put the app key and secret (Settings tab) in `DROPBOX_APP_KEY` and `DROPBOX_APP_SECRET`.
+4. Get a refresh token once: open `https://www.dropbox.com/oauth2/authorize?client_id=APP_KEY&response_type=code&token_access_type=offline`, press Allow, copy the code, then on the server run `curl https://api.dropbox.com/oauth2/token -d code=THE_CODE -d grant_type=authorization_code -u APP_KEY:APP_SECRET` and copy `refresh_token` from the reply into `DROPBOX_REFRESH_TOKEN` (the other fields in the reply are not needed; do not paste the reply anywhere).
+5. `systemctl restart summer-web summer-worker`. On the Drafts page press "random drafts": the library fetches the files it needs. After the post is published the worker deletes the file.
+Do not also enable `summer-media-sync.timer` for the same folder.

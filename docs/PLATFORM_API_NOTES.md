@@ -142,3 +142,7 @@ Sources: `https://api.fanvue.com/docs/openapi-v1.json` (spec `info.version` 0.1,
 Error mapping used by `app/platforms/fanvue.py` (same codes as the table above): 401 -> `token_expired`; 403 -> `missing_scope` (new code, non-transient); 410 -> `api_version_sunset` (new code, non-transient); 429/503 -> `rate_limited` (transient, honour `Retry-After` up to 120 s); ≥500 -> `upstream_error`; media `error` -> `media_rejected`; other 4xx -> `bad_request`.
 
 Live checklist (Fanvue, L7-L9): token `expires_in` real value · `publishedAt` when published immediately · `tips` object shape · `not_answered` semantics · an `out` message sent by the app shows our `appUuid` · PPV message as seen by a test fan.
+
+
+## Dropbox folder link (added 2026-11-09, all UNVERIFIED until the first live pull)
+Source: Dropbox developer-forum posts (official reference pages did not render). `POST https://api.dropboxapi.com/oauth2/token` (`grant_type=refresh_token`, `client_id`, `client_secret`); `POST /2/files/list_folder` with body `{"path": "", "shared_link": {"url": "<link>"}}` (path relative to the link; non-recursive only; `list_folder/continue` with `cursor` when `has_more`); `POST https://content.dropboxapi.com/2/sharing/get_shared_link_file` with header `Dropbox-API-Arg: {"url": "<link>", "path": "/file.mp4"}`, response body = the file. Some posts report `list_folder` returning no entries for some links: if that happens, check the link and the scopes first.

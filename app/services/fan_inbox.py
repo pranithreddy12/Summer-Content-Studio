@@ -186,7 +186,9 @@ def _sync_chat(db, account, fan: dict, item: dict, token: str, http, rules: dict
 
     state = {"chat_id": chat.id, "handle": chat.handle or chat.fan_uuid[:8], "new": len(new_in), "escalated": False,
              "needs_reply": False, "reason": None, "newest": newest[0] if newest else "none"}
-    if newest and newest[1]:                     # Summer spoke last after all
+    if chat.status == "sending":
+        pass                                     # Lee's reply is going out; send_reply sets the final status
+    elif newest and newest[1]:                   # Summer spoke last after all
         chat.status, chat.draft_text = "replied", None
     elif new_in:
         reason = needs_escalation(" \n".join(new_in), rules)
@@ -398,9 +400,14 @@ def send_reply(db: Session, chat_id: int, text: str, http, asset_id: Optional[in
         raise AppError(code, message, status=502 if getattr(e, "transient", False) else 409) from e
 
     chat = get_chat(db, chat_id)
-    db.add(FanMessage(chat_id=chat.id, fanvue_message_uuid=message_uuid, direction="out", text=text,
-                      message_type="SINGLE_RECIPIENT", sent_at=now, ppv_price_cents=price_cents,
-                      media_asset_id=asset.id if asset else None, sent_via="studio", created_at=now))
+    stored = db.execute(select(FanMessage).where(FanMessage.fanvue_message_uuid == message_uuid)).scalar_one_or_none()
+    if stored is None:
+        db.add(FanMessage(chat_id=chat.id, fanvue_message_uuid=message_uuid, direction="out", text=text,
+                          message_type="SINGLE_RECIPIENT", sent_at=now, ppv_price_cents=price_cents,
+                          media_asset_id=asset.id if asset else None, sent_via="studio", created_at=now))
+    else:  # a worker sync already stored it as 'fanvue': add what only we know
+        stored.sent_via, stored.ppv_price_cents = "studio", price_cents
+        stored.media_asset_id = asset.id if asset else None
     chat.status, chat.draft_text, chat.escalation_reason = "replied", None, None
     chat.last_message_at = now
     db.commit()

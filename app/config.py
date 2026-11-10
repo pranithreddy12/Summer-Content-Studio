@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # Dropbox sync disk guard
     MIN_FREE_DISK_GB: float = 2.0
 
+    # Dropbox folder link (pull random media on demand, no bulk sync); all four needed to turn it on
+    DROPBOX_FOLDER_URL: Optional[str] = None
+    DROPBOX_APP_KEY: Optional[str] = None
+    DROPBOX_APP_SECRET: Optional[SecretStr] = None
+    DROPBOX_REFRESH_TOKEN: Optional[SecretStr] = None
+
     # ---- Phase 3: Fanvue (PLAN_PHASE3 §4) ----
     FANVUE_CLIENT_ID: Optional[str] = None
     FANVUE_CLIENT_SECRET: Optional[SecretStr] = None
@@ -139,7 +145,8 @@ class Settings(BaseSettings):
         "TOKEN_ENCRYPTION_KEY", "MEDIA_URL_SECRET", "INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "INSTAGRAM_CONFIG_ID",
         "TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
         "NTFY_TOPIC", "PUSHOVER_APP_TOKEN", "PUSHOVER_USER_KEY",
-        "FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET", mode="before",
+        "FANVUE_CLIENT_ID", "FANVUE_CLIENT_SECRET",
+        "DROPBOX_FOLDER_URL", "DROPBOX_APP_KEY", "DROPBOX_APP_SECRET", "DROPBOX_REFRESH_TOKEN", mode="before",
     )
     @classmethod
     def _empty_is_unset(cls, v):
