@@ -251,3 +251,10 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - `planner._bounds`: the effective daily range is `min(min_per_day, weekly // 7)` to `max(max_per_day, ceil(weekly / 7))`, so the weekly total is always planned (15 a week with max 2 a day gives up to 3 a day; 3 a week with min 1 gives no daily minimum). Used by `_day_counts`, `_day_targets` and the window check. Form limits in `planner.html` match.
 - Tests: `test_weekly_count_wins_over_the_daily_range`, `test_six_posts_a_day_with_30_minute_gap`; the API test now expects 28 a week to be accepted and 200 a week to be refused.
 - Risk, not enforced by code: many posts a day on a real Instagram account can look like spam to Meta (the API itself allows 100 per 24 h).
+
+## Planner: choose the start date and 1-7 days (2026-11-12)
+**Why:** the developer wants to plan anything from a single day to a full week, not always the next 7 days (PLAN_PHASE2 §9a fixed the range at 7 days from tomorrow).
+- `planner.plan_week(..., start_day, days=1..7)`; `days` outside 1-7 is a 422. The same seeded weekly day pattern is used and only the chosen days are taken from it (`_day_targets`), so a 1-day plan of a 6-a-day rule gives 6 slots, and a full week still gives exactly `posts_per_week`. Already-planned posts count against the range, so a re-run adds nothing (idempotent). Slots earlier than now + lead are still dropped, so a start date of today only uses the rest of today.
+- Planner page: per platform a start date (default tomorrow) and a days drop-down; API `POST /api/v1/planner/plan` takes `days` (default 7). The auto-planner, CLI and scheduler keep the 7-day default.
+- Tests: `test_plan_range_of_1_to_7_days`, `test_plan_days_outside_1_to_7_is_refused`.
+- Process note: two earlier edits of `planner.html` through PowerShell `Set-Content` re-encoded its text (garbled dashes) and were pushed; the file was restored from `02a8863` and re-edited with the editor tool. Nothing else was affected.

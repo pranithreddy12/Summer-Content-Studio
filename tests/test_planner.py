@@ -216,6 +216,33 @@ def test_plan_week_schedules_approved_posts(app, client, rule_row):
         assert "08:00" <= local.strftime("%H:%M") <= "21:00"
 
 
+@pytest.mark.parametrize("days", [1, 3, 7])
+def test_plan_range_of_1_to_7_days(app, client, rule_row, days):
+    """Only the chosen days get slots, never more than the weekly pattern gives them, and a re-run adds nothing."""
+    from app.services.posts import get_post
+
+    rule_row.posts_per_week, rule_row.min_per_day, rule_row.max_per_day, rule_row.min_gap_minutes = 42, 6, 6, 30
+    posts = [make_approved(caption="R", i=i) for i in range(50)]
+    now = datetime(2026, 10, 25, 20, 0, tzinfo=timezone.utc)
+    first = date(2026, 10, 26)
+    result = plan_week(db_session(), rule_row, now, rng=random.Random(2), start_day=first, days=days)
+    assert len(result.filled) == 6 * days  # 6 a day for each chosen day
+    assert {s.local_day for s in result.slots} == {first + timedelta(days=i) for i in range(days)}
+    planned = [p for p in (get_post(db_session(), pid) for pid in posts) if p.status == "scheduled"]
+    assert len(planned) == 6 * days
+    again = plan_week(db_session(), rule_row, now, rng=random.Random(3), start_day=first, days=days)
+    assert again.filled == [] and again.slots == []  # idempotent: nothing left to add
+
+
+def test_plan_days_outside_1_to_7_is_refused(app, client, rule_row):
+    for bad in (0, 8):
+        with pytest.raises(AppError) as e:
+            plan_week(db_session(), rule_row, datetime(2026, 10, 25, 20, 0, tzinfo=timezone.utc), days=bad)
+        assert e.value.status == 422
+    r = client.post("/api/v1/planner/plan", json={"profile_id": 1, "platform": "instagram", "days": 9})
+    assert r.status_code == 422
+
+
 def test_plan_week_idempotent(app, client, rule_row):
     for i in range(10):
         make_approved(caption="A", i=i)

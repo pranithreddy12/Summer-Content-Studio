@@ -272,7 +272,7 @@ def test_planner_page_renders(client):
     db.commit()
     resp = client.get("/planner")
     assert resp.status_code == 200
-    assert "Plan next 7 days" in resp.text
+    assert "Plan posts" in resp.text and 'name="days"' in resp.text and 'name="start_day"' in resp.text
     assert "instagram" in resp.text
 
 

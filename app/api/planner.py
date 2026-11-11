@@ -53,6 +53,7 @@ class PlanRequest(BaseModel):
     profile_id: Id
     platform: str
     start_day: Optional[str] = None  # ISO date, default: tomorrow (rule tz)
+    days: int = Field(7, ge=1, le=7)  # how many days to plan, from start_day
 
 
 def _get_rule(db: Session, rule_id: int) -> PostingRule:
@@ -113,7 +114,7 @@ async def plan_endpoint(req: PlanRequest, db: Session = Depends(get_db)):
             raise AppError("validation_error", "start_day must be an ISO date (YYYY-MM-DD)", status=422)
 
     now = utcnow()
-    result = plan_week(db, rule, now, start_day=start_day)
+    result = plan_week(db, rule, now, start_day=start_day, days=req.days)
     return {
         "slots": len(result.slots),
         "filled": len(result.filled),

@@ -1,19 +1,25 @@
-﻿{% extends "base.html" %}
-{% block title %}Planner â€” Summer Content{% endblock %}
+{% extends "base.html" %}
+{% block title %}Planner — Summer Content{% endblock %}
 {% block content %}
 <div class="page">
   <header class="page-head">
     <div>
       <span class="eyebrow">Weekly planner</span>
-      <h1>Plan the next 7 days</h1>
-      <p class="page-lede">Random times inside each platform's posting window (default 08:00â€“21:00 local), 10 per week.
-      The planner schedules <strong>approved</strong> posts only â€” it never approves anything.</p>
+      <h1>Plan posts</h1>
+      <p class="page-lede">Random times inside each platform's posting window (default 08:00–21:00 local).
+      Pick a start date and how many days (1 to 7). The planner schedules <strong>approved</strong> posts only — it never approves anything.</p>
     </div>
     <div class="page-actions">
       {% for platform, week in rule_weeks.items() %}
       <form method="post" action="/planner/plan" class="inline-form">
         <input type="hidden" name="platform" value="{{ platform }}">
-        <button type="submit" class="btn btn-primary" id="plan-{{ platform }}-btn">Plan next 7 days ({{ platform }})</button>
+        <label class="small">Start <input type="date" name="start_day" value="{{ default_start }}"></label>
+        <label class="small">Days
+          <select name="days">
+            {% for n in range(1, 8) %}<option value="{{ n }}" {% if n == 7 %}selected{% endif %}>{{ n }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary" id="plan-{{ platform }}-btn">Plan {{ platform }}</button>
       </form>
       {% endfor %}
     </div>
@@ -21,7 +27,7 @@
   {% include "_flash.html" %}
 
   {% if not rule_weeks %}
-  <div class="banner banner-info"><p>No posting rules yet â€” activate one below.</p></div>
+  <div class="banner banner-info"><p>No posting rules yet — activate one below.</p></div>
   {% endif %}
 
   {% for platform, week in rule_weeks.items() %}
@@ -89,7 +95,7 @@
       </div>
     </div>
     {% if platform == 'tiktok' %}
-    <p class="small banner banner-info">Note: the planned time for TikTok is when the video is delivered to your drafts â€” you publish it in the TikTok app.</p>
+    <p class="small banner banner-info">Note: the planned time for TikTok is when the video is delivered to your drafts — you publish it in the TikTok app.</p>
     {% endif %}
   </section>
   {% endfor %}

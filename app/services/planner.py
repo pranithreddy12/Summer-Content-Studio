@@ -151,7 +151,7 @@ def make_slots(rule, start_day: date, now: datetime, rng: random.Random,
 
     slots: list[Slot] = []
     day = start_day
-    for i in range(7):
+    for i in range(len(counts)):  # 7 days, or fewer when plan_week got a shorter range
         for m in _pick_minutes(counts[i], span, rule.min_gap_minutes, rng):
             minute_of_day = start_m + m
             local_dt = datetime.combine(
@@ -226,14 +226,15 @@ def _sibling_day(db: Session, post, tz) -> date | None:
 
 
 def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
-    """New slots per day such that each day reaches min_per_day, follows the
-    weekly pattern, stays <= max_per_day, and the 7-day total (occupied +
-    new) never exceeds posts_per_week - even when re-planning a part-filled week."""
-    budget = max(0, rule.posts_per_week - sum(occupied))
-    targets = [0] * 7
+    """New slots per day (one entry per planned day, 1-7) such that each day reaches min_per_day, follows the
+    weekly pattern, stays <= max_per_day, and the total (occupied + new) never exceeds the pattern's total for
+    those days (posts_per_week for a full week) - even when re-planning a part-filled range."""
+    n = len(occupied)
+    budget = max(0, sum(pattern[:n]) - sum(occupied))
+    targets = [0] * n
     lo, hi = _bounds(rule.posts_per_week, rule.min_per_day, rule.max_per_day)
-    for cap in ([lo] * 7, pattern, [hi] * 7):
-        for i in range(7):
+    for cap in ([lo] * n, pattern[:n], [hi] * n):
+        for i in range(n):
             add = min(max(0, cap[i] - occupied[i] - targets[i]), budget)
             targets[i] += add
             budget -= add
@@ -241,9 +242,11 @@ def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
 
 
 def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None,
-              start_day: date | None = None, client=None) -> PlanResult:
-    """Plan the next 7 days for one (profile, platform) rule. Idempotent:
-    running twice never double-schedules. Never approves."""
+              start_day: date | None = None, client=None, days: int = 7) -> PlanResult:
+    """Plan `days` days (1-7, default 7) from `start_day` (default tomorrow) for one (profile, platform) rule.
+    Idempotent: running twice never double-schedules. Never approves."""
+    if not isinstance(days, int) or not 1 <= days <= 7:
+        raise AppError("validation_error", "days: must be between 1 and 7", status=422)
     rng = rng or random.Random()
     tz = ZoneInfo(rule.timezone)
     settings = get_settings()
@@ -257,7 +260,7 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
         # default: tomorrow in the rule tz (today counts only for slots after now+lead)
         start_day = (now.astimezone(tz) + timedelta(days=1)).date()
 
-    week_days = [start_day + timedelta(days=i) for i in range(7)]
+    week_days = [start_day + timedelta(days=i) for i in range(days)]
     occupied = _occupied_per_day(db, rule, week_days)
 
     # Day targets reduced by posts that are already scheduled/published

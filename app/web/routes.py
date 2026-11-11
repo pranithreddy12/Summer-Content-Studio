@@ -914,6 +914,7 @@ async def planner_page(
         "request": request,
         "rules": rules,
         "rule_weeks": weeks,
+        "default_start": (now.astimezone(tz) + timedelta(days=1)).date().isoformat(),  # tomorrow, like the planner default
         "flash": get_flash(request),
     })
 
@@ -973,9 +974,12 @@ async def planner_rule_update(
 async def planner_run(
     platform: str = Form(...),
     profile_id: int = Form(1),
+    start_day: str = Form(""),
+    days: str = Form("7"),
     db: Session = Depends(get_db),
 ):
-    """'Plan next 7 days' button -> planner.plan_week (never approves)."""
+    """'Plan' form (start date + 1-7 days) -> planner.plan_week (never approves)."""
+    from datetime import date as _date
     from app.models import PostingRule
     from app.services.planner import plan_week as run_plan_week
     from app.services import AppError
@@ -989,10 +993,15 @@ async def planner_run(
     if not rule.is_active:
         return redirect_with_flash("/planner", "The rule is inactive - activate it first", "error")
     try:
-        result = run_plan_week(db, rule, utcnow())
+        first = _date.fromisoformat(start_day) if start_day else None
+        n = int(days or 7)
+    except ValueError:
+        return redirect_with_flash("/planner", "Pick a valid start date and number of days", "error")
+    try:
+        result = run_plan_week(db, rule, utcnow(), start_day=first, days=n)
     except AppError as e:
         return redirect_with_flash("/planner", e.message, "error")
-    msg = (f"Planned {platform}: {len(result.filled)} slots filled, "
+    msg = (f"Planned {platform} ({n} day{'s' if n != 1 else ''}): {len(result.filled)} slots filled, "
            f"{len(result.unfilled)} empty")
     if result.topup_drafts:
         msg += f", {len(result.topup_drafts)} AI drafts added"
