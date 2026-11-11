@@ -244,3 +244,8 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - Cleanup: the worker stage `dropbox_purge` deletes the file and archives the row once every post using it is published / sent to drafts / archived. Unused or still-queued files are kept. Disk guard: `MIN_FREE_DISK_GB` as for sync.
 - Humans still approve every post; nothing here publishes.
 - **UNVERIFIED** (Dropbox's own reference pages would not load; shapes taken from developer-forum posts): `shared_link: {"url": ...}` in `list_folder`, `path` relative to the link, the `Dropbox-API-Arg` header for `get_shared_link_file`, required scopes (`files.metadata.read`, `files.content.read`, `sharing.read`), and that a token from our own Dropbox app can read a link to Lee's folder. Proven at the first live pull.
+
+## Planner limits raised: up to 8 posts/day, 56/week (2026-11-12)
+**Why:** the developer asked to plan 6 posts a day with a 30-minute gap (PLAN_PHASE2 §9a capped a rule at 4/day and 28/week; Lee's agreed volume is still 10/week per platform, which stays the default).
+- `validate_rule_values` and the form inputs in `planner.html` now allow `max_per_day <= 8` and `posts_per_week <= 56`. All other rules are unchanged (weekly count between 7x min and 7x max per day, window long enough for the gap). Test: `test_six_posts_a_day_with_30_minute_gap`.
+- Risk, not enforced by code: many posts a day on a real Instagram account can look like spam to Meta; Instagram's own API limit is far higher (100 published posts per 24 h).

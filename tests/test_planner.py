@@ -65,6 +65,24 @@ def test_property_slots_over_many_seeds():
                 assert (b - a).total_seconds() >= rule.min_gap_minutes * 60
 
 
+def test_six_posts_a_day_with_30_minute_gap():
+    rule = lee_rule()
+    rule.posts_per_week, rule.min_per_day, rule.max_per_day, rule.min_gap_minutes = 42, 6, 6, 30
+    validate_rule_values(42, 6, 6, "08:00", "21:00", 30, TZ)
+    now = datetime(2026, 10, 21, 0, 0, tzinfo=timezone.utc)
+    slots = make_slots(rule, date(2026, 10, 26), now, random.Random(1))
+    assert len(slots) == 42
+    per_day = {}
+    for s in slots:
+        per_day.setdefault(s.local_day, []).append(s.start_utc)
+    assert len(per_day) == 7 and all(len(v) == 6 for v in per_day.values())
+    for v in per_day.values():
+        v.sort()
+        assert all((b - a).total_seconds() >= 30 * 60 for a, b in zip(v, v[1:]))
+    with pytest.raises(AppError):
+        validate_rule_values(63, 9, 9, "08:00", "21:00", 30, TZ)  # above the new 8/day ceiling
+
+
 def test_same_seed_same_slots_different_seeds_differ():
     rule = lee_rule()
     now = datetime(2026, 10, 21, 0, 0, tzinfo=timezone.utc)

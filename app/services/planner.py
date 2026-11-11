@@ -57,10 +57,10 @@ def validate_rule_values(posts_per_week: int, min_per_day: int, max_per_day: int
     def fail(field, msg):
         raise AppError("validation_error", f"{field}: {msg}", status=422)
 
-    if not (1 <= posts_per_week <= 28):
-        fail("posts_per_week", "must be between 1 and 28")
-    if min_per_day < 1 or max_per_day > 4 or min_per_day > max_per_day:
-        fail("min_per_day/max_per_day", "need 1 <= min_per_day <= max_per_day <= 4")
+    if not (1 <= posts_per_week <= 56):
+        fail("posts_per_week", "must be between 1 and 56")
+    if min_per_day < 1 or max_per_day > 8 or min_per_day > max_per_day:
+        fail("min_per_day/max_per_day", "need 1 <= min_per_day <= max_per_day <= 8")
     if posts_per_week < 7 * min_per_day:
         fail("posts_per_week", f"must be at least 7 * min_per_day ({7 * min_per_day})")
     if posts_per_week > 7 * max_per_day:
