@@ -50,6 +50,13 @@ class PlanResult:
     topup_drafts: list = field(default_factory=list)
 
 
+def _bounds(posts_per_week: int, min_per_day: int, max_per_day: int) -> tuple[int, int]:
+    """Effective (min, max) posts per day. posts_per_week is the truth: the daily range is a preference that
+    widens when the weekly count does not fit in it (15 a week with max 2 a day -> up to 3 a day; 3 a week
+    with min 1 a day -> no daily minimum)."""
+    return min(min_per_day, posts_per_week // 7), max(max_per_day, -(-posts_per_week // 7))
+
+
 def validate_rule_values(posts_per_week: int, min_per_day: int, max_per_day: int,
                          window_start: str, window_end: str, min_gap_minutes: int,
                          timezone_name: str) -> None:
@@ -57,14 +64,11 @@ def validate_rule_values(posts_per_week: int, min_per_day: int, max_per_day: int
     def fail(field, msg):
         raise AppError("validation_error", f"{field}: {msg}", status=422)
 
-    if not (1 <= posts_per_week <= 56):
-        fail("posts_per_week", "must be between 1 and 56")
-    if min_per_day < 1 or max_per_day > 8 or min_per_day > max_per_day:
-        fail("min_per_day/max_per_day", "need 1 <= min_per_day <= max_per_day <= 8")
-    if posts_per_week < 7 * min_per_day:
-        fail("posts_per_week", f"must be at least 7 * min_per_day ({7 * min_per_day})")
-    if posts_per_week > 7 * max_per_day:
-        fail("posts_per_week", f"must be at most 7 * max_per_day ({7 * max_per_day})")
+    if not (1 <= posts_per_week <= 168):
+        fail("posts_per_week", "must be between 1 and 168")
+    if min_per_day < 0 or max_per_day < 1 or max_per_day > 24 or min_per_day > max_per_day:
+        fail("min_per_day/max_per_day", "need 0 <= min_per_day <= max_per_day <= 24 (max at least 1)")
+    max_per_day = _bounds(posts_per_week, min_per_day, max_per_day)[1]  # the weekly count wins over the daily range
 
     def minutes(value):
         try:
@@ -92,8 +96,9 @@ def _day_counts(rule, rng: random.Random) -> list[int]:
     """7 per-day counts: every day gets min_per_day; the remainder goes to
     distinct random days (never above max_per_day). Lee's numbers: exactly
     3 random days get 2."""
-    counts = [rule.min_per_day] * 7
-    extra = rule.posts_per_week - 7 * rule.min_per_day
+    lo, hi = _bounds(rule.posts_per_week, rule.min_per_day, rule.max_per_day)
+    counts = [lo] * 7
+    extra = rule.posts_per_week - 7 * lo
     while extra > 0:
         days = list(range(7))
         rng.shuffle(days)
@@ -101,7 +106,7 @@ def _day_counts(rule, rng: random.Random) -> list[int]:
         for d in days:
             if extra == 0:
                 break
-            if counts[d] < rule.max_per_day:
+            if counts[d] < hi:
                 counts[d] += 1
                 extra -= 1
                 progressed = True
@@ -226,7 +231,8 @@ def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
     new) never exceeds posts_per_week - even when re-planning a part-filled week."""
     budget = max(0, rule.posts_per_week - sum(occupied))
     targets = [0] * 7
-    for cap in ([rule.min_per_day] * 7, pattern, [rule.max_per_day] * 7):
+    lo, hi = _bounds(rule.posts_per_week, rule.min_per_day, rule.max_per_day)
+    for cap in ([lo] * 7, pattern, [hi] * 7):
         for i in range(7):
             add = min(max(0, cap[i] - occupied[i] - targets[i]), budget)
             targets[i] += add

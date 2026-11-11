@@ -33,15 +33,15 @@
         <div class="form-row">
           <div class="form-group">
             <label for="pw-{{ rule.id }}">Posts per week</label>
-            <input type="number" name="posts_per_week" id="pw-{{ rule.id }}" value="{{ rule.posts_per_week }}" min="1" max="56">
+            <input type="number" name="posts_per_week" id="pw-{{ rule.id }}" value="{{ rule.posts_per_week }}" min="1" max="168">
           </div>
           <div class="form-group">
             <label for="mind-{{ rule.id }}">Min per day</label>
-            <input type="number" name="min_per_day" id="mind-{{ rule.id }}" value="{{ rule.min_per_day }}" min="1" max="8">
+            <input type="number" name="min_per_day" id="mind-{{ rule.id }}" value="{{ rule.min_per_day }}" min="0" max="24">
           </div>
           <div class="form-group">
             <label for="maxd-{{ rule.id }}">Max per day</label>
-            <input type="number" name="max_per_day" id="maxd-{{ rule.id }}" value="{{ rule.max_per_day }}" min="1" max="8">
+            <input type="number" name="max_per_day" id="maxd-{{ rule.id }}" value="{{ rule.max_per_day }}" min="1" max="24">
           </div>
         </div>
         <div class="form-row">

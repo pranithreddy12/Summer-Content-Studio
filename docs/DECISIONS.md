@@ -245,7 +245,9 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - Humans still approve every post; nothing here publishes.
 - **UNVERIFIED** (Dropbox's own reference pages would not load; shapes taken from developer-forum posts): `shared_link: {"url": ...}` in `list_folder`, `path` relative to the link, the `Dropbox-API-Arg` header for `get_shared_link_file`, required scopes (`files.metadata.read`, `files.content.read`, `sharing.read`), and that a token from our own Dropbox app can read a link to Lee's folder. Proven at the first live pull.
 
-## Planner limits raised: up to 8 posts/day, 56/week (2026-11-12)
-**Why:** the developer asked to plan 6 posts a day with a 30-minute gap (PLAN_PHASE2 §9a capped a rule at 4/day and 28/week; Lee's agreed volume is still 10/week per platform, which stays the default).
-- `validate_rule_values` and the form inputs in `planner.html` now allow `max_per_day <= 8` and `posts_per_week <= 56`. All other rules are unchanged (weekly count between 7x min and 7x max per day, window long enough for the gap). Test: `test_six_posts_a_day_with_30_minute_gap`.
-- Risk, not enforced by code: many posts a day on a real Instagram account can look like spam to Meta; Instagram's own API limit is far higher (100 published posts per 24 h).
+## Planner rule: the weekly count wins, daily range is a preference (2026-11-12)
+**Why:** the developer wants the planner flexible (e.g. 6 posts a day with a 30-minute gap). PLAN_PHASE2 §9a coupled the numbers (`7*min <= weekly <= 7*max`, `max_per_day <= 4`, `weekly <= 28`), so ordinary settings were rejected. Lee's agreed volume (10 a week, 1-2 a day) stays the default.
+- `validate_rule_values`: `1 <= posts_per_week <= 168`, `0 <= min_per_day <= max_per_day <= 24` (max at least 1), window still long enough for the gap. The two coupling checks are gone.
+- `planner._bounds`: the effective daily range is `min(min_per_day, weekly // 7)` to `max(max_per_day, ceil(weekly / 7))`, so the weekly total is always planned (15 a week with max 2 a day gives up to 3 a day; 3 a week with min 1 gives no daily minimum). Used by `_day_counts`, `_day_targets` and the window check. Form limits in `planner.html` match.
+- Tests: `test_weekly_count_wins_over_the_daily_range`, `test_six_posts_a_day_with_30_minute_gap`; the API test now expects 28 a week to be accepted and 200 a week to be refused.
+- Risk, not enforced by code: many posts a day on a real Instagram account can look like spam to Meta (the API itself allows 100 per 24 h).

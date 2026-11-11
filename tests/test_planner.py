@@ -80,7 +80,26 @@ def test_six_posts_a_day_with_30_minute_gap():
         v.sort()
         assert all((b - a).total_seconds() >= 30 * 60 for a, b in zip(v, v[1:]))
     with pytest.raises(AppError):
-        validate_rule_values(63, 9, 9, "08:00", "21:00", 30, TZ)  # above the new 8/day ceiling
+        validate_rule_values(200, 24, 24, "08:00", "21:00", 30, TZ)  # above the 168/week ceiling
+
+
+@pytest.mark.parametrize("weekly,mn,mx", [(15, 1, 2), (3, 1, 2), (1, 0, 1), (30, 0, 1), (42, 6, 6)])
+def test_weekly_count_wins_over_the_daily_range(weekly, mn, mx):
+    """Any numbers work: the weekly total is always planned; the daily range only widens when it cannot hold it."""
+    rule = lee_rule()
+    rule.posts_per_week, rule.min_per_day, rule.max_per_day, rule.min_gap_minutes = weekly, mn, mx, 30
+    validate_rule_values(weekly, mn, mx, "08:00", "21:00", 30, TZ)
+    now = datetime(2026, 10, 21, 0, 0, tzinfo=timezone.utc)
+    for seed in range(10):
+        slots = make_slots(rule, date(2026, 10, 26), now, random.Random(seed))
+        assert len(slots) == weekly
+        per_day = {}
+        for s in slots:
+            per_day.setdefault(s.local_day, []).append(s.start_utc)
+        assert max(len(v) for v in per_day.values()) <= max(mx, -(-weekly // 7))
+        for v in per_day.values():
+            v.sort()
+            assert all((b - a).total_seconds() >= 30 * 60 for a, b in zip(v, v[1:]))
 
 
 def test_same_seed_same_slots_different_seeds_differ():
@@ -303,7 +322,10 @@ def test_api_rules_crud_and_validation(app, client, rule_row):
     assert ok.status_code == 200, ok.text
     assert ok.json()["posts_per_week"] == 14
 
-    bad = client.put(f"/api/v1/planner/rules/{rule_id}", json={"posts_per_week": 28})  # >7*max_per_day(2)
+    wide = client.put(f"/api/v1/planner/rules/{rule_id}", json={"posts_per_week": 28})  # more than 2/day: the range widens
+    assert wide.status_code == 200, wide.text
+
+    bad = client.put(f"/api/v1/planner/rules/{rule_id}", json={"posts_per_week": 200})  # above the 168/week ceiling
     assert bad.status_code == 422
     assert bad.json()["error"]["code"] == "validation_error"
 
