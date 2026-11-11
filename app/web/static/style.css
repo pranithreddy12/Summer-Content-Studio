@@ -1116,3 +1116,4 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 /* calendar drag-and-drop: scheduled chips can be dragged onto another day */
 .cal-slot[draggable="true"] { cursor: grab; }
 .cal-day.cal-drop { outline: 2px dashed var(--accent, #e6a03c); outline-offset: -2px; }
+.cal-num { opacity: 0.65; margin-left: 4px; font-variant-numeric: tabular-nums; }

@@ -84,7 +84,7 @@
           {% for post in day.posts %}
           <a class="slot slot-{{ post.status }}{% if not post.planned_by or post.planned_by != 'planner' %} slot-user{% endif %}"
              href="/posts/{{ post.id }}" title="{{ post.status }} ({{ post.planned_by or 'user' }})">
-            {{ (post.planned_publish_at | local(rule.timezone)).strftime('%H:%M') }}
+            {{ (post.planned_publish_at | local(rule.timezone)).strftime('%H:%M') }} <span class="cal-num">#{{ post.id }}</span>
           </a>
           {% endfor %}
           {% if not day.posts %}

@@ -26,7 +26,7 @@
          href="/posts/{{ post.id }}"
          {% if post.status == 'scheduled' %}draggable="true" data-post-id="{{ post.id }}" data-time="{{ (post.planned_publish_at | local).strftime('%H:%M') }}" data-day="{{ day.date.isoformat() }}"{% endif %}
          title="{{ post.status }} · {{ post.platform }}{% if not post.in_window %} · outside the posting window{% endif %}">
-        {{ (post.planned_publish_at | local).strftime('%H:%M') }} {{ post.platform[:2] }}
+        {{ (post.planned_publish_at | local).strftime('%H:%M') }} {{ post.platform[:2] }} <span class="cal-num">#{{ post.id }}</span>
       </a>
       {% endfor %}
     </div>

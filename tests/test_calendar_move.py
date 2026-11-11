@@ -86,3 +86,4 @@ def test_calendar_marks_scheduled_posts_draggable(app, client):
     monday = day - timedelta(days=day.weekday())
     html = client.get(f"/calendar?week={monday.isoformat()}").text
     assert f'data-post-id="{pid}"' in html and 'draggable="true"' in html and 'data-day="' in html
+    assert f'>#{pid}</span>' in html  # the draft number is shown on the chip
