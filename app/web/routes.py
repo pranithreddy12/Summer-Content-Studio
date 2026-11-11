@@ -1008,37 +1008,41 @@ async def planner_run(
     return redirect_with_flash("/planner", msg)
 
 
-@router.post("/calendar/move")
-async def calendar_move(request: Request, db: Session = Depends(get_db)):
-    """Calendar drag-and-drop / edit: {post_id, day: YYYY-MM-DD, time?: HH:MM}. No time = keep the post's
-    current time of day. Saved straight away (services.posts.reschedule_post)."""
+@router.post("/calendar/save")
+async def calendar_save(request: Request, db: Session = Depends(get_db)):
+    """Calendar 'Save changes': {"moves": [{post_id, day: YYYY-MM-DD, time?: HH:MM}, ...]}. No time = keep the
+    post's current time of day. All or nothing (services.posts.reschedule_posts)."""
     from datetime import time as _time
     from zoneinfo import ZoneInfo
     from app.services import AppError
-    from app.services.posts import reschedule_post
+    from app.services.posts import reschedule_posts
 
+    tz = ZoneInfo(get_settings().APP_TIMEZONE)
+    moves: dict[int, datetime] = {}
     try:
-        body = await request.json()
-        post_id, day = int(body["post_id"]), date.fromisoformat(str(body["day"]))
-        if not 0 < post_id < 2 ** 62:
-            raise ValueError("post_id")
-        post = get_post(db, post_id)
-        tz = ZoneInfo(get_settings().APP_TIMEZONE)
-        if body.get("time"):
-            hh, mm = str(body["time"]).split(":")
-            at = _time(int(hh), int(mm))
-        elif post and post.planned_publish_at:
-            at = post.planned_publish_at.astimezone(tz).time().replace(second=0, microsecond=0)
-        else:
-            raise ValueError("no time")
-        new_time = datetime.combine(day, at, tzinfo=tz).astimezone(timezone.utc)
-    except (KeyError, ValueError, TypeError, OverflowError):
-        return JSONResponse({"ok": False, "message": "Pick a valid day and time (HH:MM)."}, status_code=422)
+        items = (await request.json())["moves"]
+        if not isinstance(items, list) or len(items) > 200:
+            raise ValueError("moves")
+        for item in items:
+            post_id, day = int(item["post_id"]), date.fromisoformat(str(item["day"]))
+            if not 0 < post_id < 2 ** 62:
+                raise ValueError("post_id")
+            if item.get("time"):
+                hh, mm = str(item["time"]).split(":")
+                at = _time(int(hh), int(mm))
+            else:
+                post = get_post(db, post_id)
+                if not post or not post.planned_publish_at:
+                    raise ValueError("no time")
+                at = post.planned_publish_at.astimezone(tz).time().replace(second=0, microsecond=0)
+            moves[post_id] = datetime.combine(day, at, tzinfo=tz).astimezone(timezone.utc)  # last move of a post wins
+    except (KeyError, ValueError, TypeError, OverflowError, AttributeError):
+        return JSONResponse({"ok": False, "message": "Each change needs a valid day and time (HH:MM)."}, status_code=422)
     try:
-        moved = reschedule_post(db, post_id, new_time)
+        saved = reschedule_posts(db, moves)
     except AppError as e:
         return JSONResponse({"ok": False, "message": e.message}, status_code=e.status)
-    return {"ok": True, "message": "Moved to " + moved.planned_publish_at.astimezone(tz).strftime("%a %d %b %H:%M")}
+    return {"ok": True, "message": f"Saved {len(saved)} change{'s' if len(saved) != 1 else ''}."}
 
 
 @router.get("/calendar", response_class=HTMLResponse)
@@ -1066,30 +1070,37 @@ async def calendar_page(
     if start.weekday() != 0:  # normalise to Monday
         start = start - timedelta(days=start.weekday())
 
-    days = []
-    for i in range(7):
-        d = start + timedelta(days=i)
-        day_start = datetime(d.year, d.month, d.day, 0, 0, tzinfo=tz)
-        day_end = day_start + timedelta(days=1)
-        posts = db.execute(
-            select(ContentPost)
-            .options(joinedload(ContentPost.profile), joinedload(ContentPost.asset))
-            .where(
-                ContentPost.status.in_(
-                    [PostStatus.scheduled.value, PostStatus.published.value,
-                     PostStatus.sent_to_drafts.value, PostStatus.publishing.value]),
-                ContentPost.planned_publish_at >= day_start,
-                ContentPost.planned_publish_at < day_end,
-            ).order_by(ContentPost.planned_publish_at)
-        ).scalars().all()
-        for post in posts:
-            rule = get_publish_rule(db, post.model_profile_id, post.platform)
-            post.in_window = in_window(rule, post.planned_publish_at)
-        days.append({"date": d, "posts": posts})
+    this_monday = today - timedelta(days=today.weekday())
+    weeks = []  # two weeks stacked, so a post can be dragged from one into the other
+    for w in range(2):
+        week_start = start + timedelta(days=7 * w)
+        days = []
+        for i in range(7):
+            d = week_start + timedelta(days=i)
+            day_start = datetime(d.year, d.month, d.day, 0, 0, tzinfo=tz)
+            day_end = day_start + timedelta(days=1)
+            posts = db.execute(
+                select(ContentPost)
+                .options(joinedload(ContentPost.profile), joinedload(ContentPost.asset))
+                .where(
+                    ContentPost.status.in_(
+                        [PostStatus.scheduled.value, PostStatus.published.value,
+                         PostStatus.sent_to_drafts.value, PostStatus.publishing.value]),
+                    ContentPost.planned_publish_at >= day_start,
+                    ContentPost.planned_publish_at < day_end,
+                ).order_by(ContentPost.planned_publish_at)
+            ).scalars().all()
+            for post in posts:
+                rule = get_publish_rule(db, post.model_profile_id, post.platform)
+                post.in_window = in_window(rule, post.planned_publish_at)
+            days.append({"date": d, "posts": posts})
+        label = ("This week" if week_start == this_monday else "Next week" if week_start == this_monday + timedelta(days=7)
+                 else "Week of " + week_start.strftime("%d %b"))
+        weeks.append({"start": week_start, "label": label, "days": days})
 
     return _template_response("calendar.html", {
         "request": request,
-        "days": days,
+        "weeks": weeks,
         "timezone": get_settings().APP_TIMEZONE,
         "week_start": start.isoformat(),
         "prev_week": (start - timedelta(days=7)).isoformat(),

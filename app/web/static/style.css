@@ -1117,3 +1117,7 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .cal-slot[draggable="true"] { cursor: grab; }
 .cal-day.cal-drop { outline: 2px dashed var(--accent, #e6a03c); outline-offset: -2px; }
 .cal-num { opacity: 0.65; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.cal-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.cal-tools .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cal-week-title { margin-top: 22px; }
+.cal-slot.cal-pending { border-style: dashed; border-color: #e6a03c; background: rgba(230, 160, 60, 0.12); }

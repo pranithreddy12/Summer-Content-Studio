@@ -5,20 +5,33 @@
   <header class="page-head">
     <div>
       <span class="eyebrow">Calendar</span>
-      <h1>Week of {{ days[0].date.strftime('%d %b') }}</h1>
-      <p class="page-lede">Scheduled and published posts, 7 columns. Times shown in {{ timezone }}.
-      <strong>Drag a scheduled post to another day</strong> (it keeps its time), or double-click it to type a new date and time. Moves are saved straight away and must be in the future and inside the posting window.</p>
+      <h1>{{ weeks[0].label }} + {{ weeks[1].label | lower }}</h1>
+      <p class="page-lede">Scheduled and published posts. Times shown in {{ timezone }}.
+      <strong>Drag a scheduled post</strong> to another day, in either week (it keeps its time), or double-click it to type a new date and time.
+      Changes are only <strong>saved when you press Save changes</strong>; use Undo and Redo to step back and forward.
+      A time must be in the future and inside the posting window.</p>
     </div>
     <div class="page-actions">
-      <a class="btn" href="/calendar?week={{ prev_week }}">&larr; Prev week</a>
-      <a class="btn" href="/calendar">This week</a>
-      <a class="btn" href="/calendar?week={{ next_week }}">Next week &rarr;</a>
+      <a class="btn" href="/calendar?week={{ prev_week }}">&larr; Earlier</a>
+      <a class="btn" href="/calendar">This week + next</a>
+      <a class="btn" href="/calendar?week={{ next_week }}">Later &rarr;</a>
     </div>
   </header>
   {% include "_flash.html" %}
 
+  <div class="cal-tools">
+    <button type="button" class="btn" id="cal-undo" disabled>Undo</button>
+    <button type="button" class="btn" id="cal-redo" disabled>Redo</button>
+    <button type="button" class="btn btn-primary" id="cal-save" disabled>Save changes</button>
+    <button type="button" class="btn" id="cal-discard" disabled>Discard</button>
+    <span class="small" id="cal-count"></span>
+  </div>
+  <p class="small" id="cal-msg" role="status" aria-live="polite"></p>
+
+  {% for week in weeks %}
+  <h2 class="cal-week-title">{{ week.label }} <small class="small">from {{ week.start.strftime('%a %d %b') }}</small></h2>
   <div class="calendar-grid">
-    {% for day in days %}
+    {% for day in week.days %}
     <div class="cal-day{% if day.date.isoformat() == today %} cal-today{% endif %}" data-day="{{ day.date.isoformat() }}">
       <div class="cal-head">{{ day.date.strftime('%a') }} <span>{{ day.date.strftime('%d') }}</span></div>
       {% for post in day.posts %}
@@ -26,56 +39,110 @@
          href="/posts/{{ post.id }}"
          {% if post.status == 'scheduled' %}draggable="true" data-post-id="{{ post.id }}" data-time="{{ (post.planned_publish_at | local).strftime('%H:%M') }}" data-day="{{ day.date.isoformat() }}"{% endif %}
          title="{{ post.status }} · {{ post.platform }}{% if not post.in_window %} · outside the posting window{% endif %}">
-        {{ (post.planned_publish_at | local).strftime('%H:%M') }} {{ post.platform[:2] }} <span class="cal-num">#{{ post.id }}</span>
+        <span class="cal-time">{{ (post.planned_publish_at | local).strftime('%H:%M') }}</span> {{ post.platform[:2] }} <span class="cal-num">#{{ post.id }}</span>
       </a>
       {% endfor %}
     </div>
     {% endfor %}
   </div>
-  <p class="small" id="cal-msg" role="status" aria-live="polite"></p>
+  {% endfor %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Reschedule by drag (to another day, same time) or double-click (type "YYYY-MM-DD HH:MM"). Saved on the server.
-const msg = document.getElementById('cal-msg');
-async function move(postId, day, time) {
-  try {
-    const r = await fetch('/calendar/move', {
-      method: 'POST', credentials: 'same-origin',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({post_id: postId, day: day, time: time || null}),
-    });
-    const data = await r.json().catch(() => ({}));
-    msg.textContent = data.message || (r.ok ? 'Moved.' : 'Could not move that post.');
-    if (r.ok) setTimeout(() => location.reload(), 600);
-  } catch (e) {
-    msg.textContent = 'Could not reach the server.';
-  }
+// Drag a scheduled post to another day (same time) or double-click to type "YYYY-MM-DD HH:MM". Changes are staged
+// on this page; nothing is stored until "Save changes". Undo / Redo (buttons, Ctrl+Z, Ctrl+Y) step through them.
+const $ = (id) => document.getElementById(id);
+const chips = new Map();      // post id -> element
+const original = {};          // post id -> {day, time} as loaded from the server
+let undoStack = [], redoStack = [];
+document.querySelectorAll('.cal-slot[data-post-id]').forEach((el) => {
+  chips.set(el.dataset.postId, el);
+  original[el.dataset.postId] = {day: el.dataset.day, time: el.dataset.time};
+});
+const isChanged = (el) => original[el.dataset.postId].day !== el.dataset.day || original[el.dataset.postId].time !== el.dataset.time;
+const changedChips = () => [...chips.values()].filter(isChanged);
+
+function refresh() {
+  const n = changedChips().length;
+  $('cal-save').disabled = $('cal-discard').disabled = n === 0;
+  $('cal-undo').disabled = undoStack.length === 0;
+  $('cal-redo').disabled = redoStack.length === 0;
+  $('cal-count').textContent = n ? n + ' unsaved change' + (n > 1 ? 's' : '') : '';
 }
-document.querySelectorAll('.cal-slot[draggable]').forEach((el) => {
-  el.addEventListener('dragstart', (e) => {
-    e.dataTransfer.setData('text/plain', el.dataset.postId);
-    e.dataTransfer.effectAllowed = 'move';
-  });
+
+function place(el, day, time) {               // move the chip on the page; false if that day is not on screen
+  const cell = document.querySelector('.cal-day[data-day="' + day + '"]');
+  if (!cell) return false;
+  el.dataset.day = day; el.dataset.time = time;
+  el.querySelector('.cal-time').textContent = time;
+  cell.appendChild(el);
+  [...cell.querySelectorAll('.cal-slot')]
+    .sort((a, b) => (a.querySelector('.cal-time').textContent).localeCompare(b.querySelector('.cal-time').textContent))
+    .forEach((c) => cell.appendChild(c));
+  el.classList.toggle('cal-pending', isChanged(el));
+  return true;
+}
+
+function stage(el, day, time) {
+  const from = {day: el.dataset.day, time: el.dataset.time};
+  if (from.day === day && from.time === time) return;
+  if (!place(el, day, time)) { $('cal-msg').textContent = 'That date is not on screen. Use Earlier / Later to bring it in view first.'; return; }
+  undoStack.push({el, from, to: {day, time}});
+  redoStack = [];
+  $('cal-msg').textContent = '';
+  refresh();
+}
+function undo() { const a = undoStack.pop(); if (!a) return; place(a.el, a.from.day, a.from.time); redoStack.push(a); refresh(); }
+function redo() { const a = redoStack.pop(); if (!a) return; place(a.el, a.to.day, a.to.time); undoStack.push(a); refresh(); }
+
+chips.forEach((el) => {
+  el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', el.dataset.postId); e.dataTransfer.effectAllowed = 'move'; });
   el.addEventListener('dblclick', (e) => {
     e.preventDefault();
-    const answer = prompt('Move to (YYYY-MM-DD HH:MM):', el.dataset.day + ' ' + el.dataset.time);
+    const answer = prompt('Move #' + el.dataset.postId + ' to (YYYY-MM-DD HH:MM):', el.dataset.day + ' ' + el.dataset.time);
     if (!answer) return;
-    const [day, time] = answer.trim().split(/\s+/);
-    move(el.dataset.postId, day, time);
+    const [day, rawTime] = answer.trim().split(/\s+/);
+    const m = /^(\d{1,2}):(\d{2})$/.exec(rawTime || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '') || !m || +m[1] > 23 || +m[2] > 59) { $('cal-msg').textContent = 'Type it as YYYY-MM-DD HH:MM.'; return; }
+    stage(el, day, m[1].padStart(2, '0') + ':' + m[2]);
   });
 });
 document.querySelectorAll('.cal-day').forEach((cell) => {
   cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('cal-drop'); });
   cell.addEventListener('dragleave', () => cell.classList.remove('cal-drop'));
   cell.addEventListener('drop', (e) => {
-    e.preventDefault();
-    cell.classList.remove('cal-drop');
-    const id = e.dataTransfer.getData('text/plain');
-    if (id) move(id, cell.dataset.day, null);
+    e.preventDefault(); cell.classList.remove('cal-drop');
+    const el = chips.get(e.dataTransfer.getData('text/plain'));
+    if (el) stage(el, cell.dataset.day, el.dataset.time);
   });
 });
+
+$('cal-undo').addEventListener('click', undo);
+$('cal-redo').addEventListener('click', redo);
+$('cal-discard').addEventListener('click', () => { if (confirm('Discard all unsaved changes?')) { window.onbeforeunload = null; location.reload(); } });
+$('cal-save').addEventListener('click', async () => {
+  const moves = changedChips().map((el) => ({post_id: +el.dataset.postId, day: el.dataset.day, time: el.dataset.time}));
+  if (!moves.length) return;
+  $('cal-save').disabled = true;
+  try {
+    const r = await fetch('/calendar/save', {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({moves})});
+    const data = await r.json().catch(() => ({}));
+    $('cal-msg').textContent = data.message || (r.ok ? 'Saved.' : 'Could not save.');
+    if (r.ok) { window.onbeforeunload = null; setTimeout(() => location.reload(), 700); } else { refresh(); }
+  } catch (e) {
+    $('cal-msg').textContent = 'Could not reach the server.'; refresh();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+window.onbeforeunload = (e) => { if (changedChips().length) { e.preventDefault(); return ''; } };
+refresh();
 </script>
 {% endblock %}
