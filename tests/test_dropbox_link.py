@@ -74,9 +74,32 @@ def test_bad_file_is_skipped_and_reported(app, env, monkeypatch):
     setup(env, monkeypatch, {"/fake.png": b"not really a png at all......", "/ok.png": PNG})
     with session_scope() as db:
         out = dropbox_link.pull(db, 2)
-        assert [a.filename for a in out["assets"]] == ["ok.png"]
+        assert [a.filename for a in out["assets"]] == ["ok.jpg"]
         assert out["errors"][0]["path"] == "/fake.png"
         assert not any(p.name.endswith(".png") and p.stat().st_size == 0 for p in get_settings().MEDIA_UPLOAD_DIR.iterdir())
+
+
+def test_png_is_stored_as_publishable_jpeg(app, env, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (40, 30), (255, 0, 0, 0)).save(buf, "PNG")  # fully transparent: must flatten to white
+    gif = io.BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(gif, "GIF")
+    setup(env, monkeypatch, {"/shot.png": buf.getvalue(), "/anim.gif": gif.getvalue()})
+    with session_scope() as db:
+        out = dropbox_link.pull(db, 5)
+        by_name = {a.filename: a for a in out["assets"]}
+        assert set(by_name) == {"shot.jpg", "anim.gif"}  # only PNG/WebP are converted
+        a = by_name["shot.jpg"]
+        path = get_settings().MEDIA_UPLOAD_DIR / a.local_relpath
+        assert a.mime_type == "image/jpeg" and path.suffix == ".jpg" and a.source_ref == "dropbox:/shot.png"
+        assert path.read_bytes()[:3] == b"\xff\xd8\xff" and a.size_bytes == path.stat().st_size
+        with Image.open(path) as im:
+            assert im.getpixel((5, 5)) == (255, 255, 255)
+        assert not path.with_suffix(".png").exists()  # the PNG original is gone
 
 
 def test_random_draft_pulls_when_library_is_empty(client, fake_claude, env, monkeypatch):

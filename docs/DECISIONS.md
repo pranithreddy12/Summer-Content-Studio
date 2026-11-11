@@ -232,6 +232,11 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 
 
 
+## Dropbox pulls: PNG/WebP converted to JPEG; Pillow added (2026-11-12)
+**Why:** Instagram feed photos must be JPEG (`publishing.asset_is_publishable`), and Lee's folder is about 1320 PNGs to 58 MP4s, so most random pulls could never be planned or published (the planner skipped them: "0 slots filled"). The user approved the one new dependency, `pillow>=10.3` (`requirements.txt`).
+- `dropbox_link._to_jpeg` runs in `pull` only: PNG/WebP -> JPEG quality 92, transparency flattened onto white, EXIF rotation applied; the original is deleted, `filename` becomes `.jpg`, `source_ref` still names the Dropbox path (so it is never re-pulled), and sha/size describe the JPEG. A file that cannot be converted is skipped and reported (`bad_file`). GIF is left alone. Manual uploads and the rclone path are unchanged.
+- Not handled: Instagram's aspect-ratio limits (4:5 to 1.91:1) and the 8 MB cap; a photo outside the ratio fails at Instagram's own check.
+
 ## Dropbox folder link: pull on demand, delete after posting (2026-11-09)
 **Why:** Lee's Dropbox folder may be too big to mirror with rclone. Instead the app reads a shared FOLDER link through the Dropbox API and downloads only the files drafts need. Opt-in: all four `DROPBOX_*` settings must be set; otherwise nothing changes and the rclone path keeps working.
 - `app/services/dropbox_link.py`: `list_folder` (walks sub-folders; recursive listing is unsupported with shared links) and `sharing/get_shared_link_file`, access token from a refresh token (no token stored in the DB). Files become normal `upload` assets, so publishing, previews, Claude image input and the "external_url is never publishable" rule are untouched. The Dropbox path is kept in `source_ref` (`dropbox:/path`), so a file is never pulled twice, even after it is deleted.

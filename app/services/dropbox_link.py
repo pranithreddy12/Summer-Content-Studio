@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -102,6 +103,32 @@ def _download(http, token: str, url: str, path: str, dest: Path, max_bytes: int)
     return digest.hexdigest(), size
 
 
+CONVERT = (".png", ".webp")  # Instagram feed photos must be JPEG (publishing.asset_is_publishable)
+
+
+def _to_jpeg(src: Path) -> tuple[Path, str, int]:
+    """Replace a PNG/WebP with a JPEG (transparency flattened onto white, EXIF rotation applied).
+    Returns (new path, sha256, size); `src` is left untouched if anything fails."""
+    dest = src.with_suffix(".jpg")
+    try:
+        with Image.open(src) as im:
+            im = ImageOps.exif_transpose(im)
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                flat = Image.new("RGB", im.size, (255, 255, 255))
+                flat.paste(im, mask=im.getchannel("A"))
+                im = flat
+            else:
+                im = im.convert("RGB")
+            im.save(dest, "JPEG", quality=92, optimize=True)
+    except Exception as e:  # corrupt image, decompression bomb, ...
+        dest.unlink(missing_ok=True)
+        raise AppError("bad_file", "Could not convert the image to JPEG.", 415) from e
+    src.unlink(missing_ok=True)
+    data = dest.read_bytes()
+    return dest, hashlib.sha256(data).hexdigest(), len(data)
+
+
 def pull(db: Session, count: int, media_type: str | None = None, http=None) -> dict:
     """Download up to `count` random not-yet-used files. Returns {"assets": [...], "errors": [...]}."""
     s = get_settings()
@@ -127,20 +154,24 @@ def pull(db: Session, count: int, media_type: str | None = None, http=None) -> d
         mime, kind = ALLOWED_EXTENSIONS[ext]
         name = uuid.uuid4().hex + ext
         dest = s.MEDIA_UPLOAD_DIR / name
+        fname = Path(path).name
         try:
             sha, size = _download(http, token, url, path, dest,
                                   (s.MAX_IMAGE_MB if kind == "image" else s.MAX_VIDEO_MB) * 1024 * 1024)
+            if ext in CONVERT:
+                dest, sha, size = _to_jpeg(dest)
+                name, (mime, kind), fname = dest.name, ALLOWED_EXTENSIONS[".jpg"], Path(path).with_suffix(".jpg").name
         except (AppError, platforms.PlatformError) as e:
             dest.unlink(missing_ok=True)
             errors.append({"path": path, "message": getattr(e, "message", str(e))})
             continue
         if db.execute(select(MediaAsset.id).where(MediaAsset.sha256 == sha, MediaAsset.is_active == True)).first():  # noqa: E712
             dest.unlink(missing_ok=True)  # same bytes already in the library
-            db.add(MediaAsset(filename=Path(path).name[:255], media_type=kind, mime_type=mime, storage_type=StorageType.upload.value,
+            db.add(MediaAsset(filename=fname[:255], media_type=kind, mime_type=mime, storage_type=StorageType.upload.value,
                               source_ref=PREFIX + path, local_relpath=None, is_active=False, description="duplicate of an existing asset"))
             db.commit()  # remember the path so it is not downloaded again
             continue
-        asset = MediaAsset(filename=Path(path).name[:255], media_type=kind, mime_type=mime, storage_type=StorageType.upload.value,
+        asset = MediaAsset(filename=fname[:255], media_type=kind, mime_type=mime, storage_type=StorageType.upload.value,
                            source_ref=PREFIX + path, local_relpath=name, sha256=sha, size_bytes=size, description="",
                            is_active=True, imported_at=utcnow(), created_at=utcnow(), updated_at=utcnow())
         db.add(asset)

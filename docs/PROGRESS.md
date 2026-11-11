@@ -339,3 +339,9 @@ Report: `docs/AUDIT_OVERALL_2026-11-07.md`.
 
 ## Phase 3 audit + Dropbox link verified (2026-11-10)
 Report: `docs/AUDIT_PHASE3_2026-11-10.md`. Two Fanvue reply race conditions fixed (`app/services/fan_inbox.py`, +2 tests in `tests/test_fan_inbox.py`, both fail without the fix). Full suite **701 passed, 0 failed** (includes the 7 Dropbox link tests). Known limit of the Dropbox link: a post stuck in `failed` keeps its pulled file until it is archived or published.
+
+## 2026-11-12 - Dropbox pulls convert PNG/WebP to JPEG
+- Found on the live server: the pull works (images and videos), but Lee's folder is ~1320 PNG / 58 MP4 and Instagram feed photos must be JPEG, so PNG drafts were skipped by the planner ("0 slots filled") and would be refused at publish.
+- `app/services/dropbox_link.py`: `_to_jpeg` converts PNG/WebP on pull (alpha flattened to white, EXIF rotation applied). New dependency `pillow>=10.3` (approved by the user; recorded in docs/DECISIONS.md). New test `test_png_is_stored_as_publishable_jpeg`.
+- Tests: 702 passed, 0 failed. Server needs `pip install -r requirements.txt` after `git pull`.
+- Known: files already pulled as PNG stay PNG (delete them in the studio); Instagram aspect-ratio/8 MB limits are not pre-checked.
