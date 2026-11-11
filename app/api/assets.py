@@ -102,7 +102,9 @@ async def get_asset_file_endpoint(asset_id: int, db: Session = Depends(get_db)):
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     path = assets_service.resolve_asset_file(asset)
-    return FileResponse(path, media_type=asset.mime_type or "application/octet-stream")
+    # an asset's bytes never change, so let the browser keep them (the grid re-downloaded every full-size image each visit)
+    return FileResponse(path, media_type=asset.mime_type or "application/octet-stream",
+                        headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.patch("/{asset_id}")
