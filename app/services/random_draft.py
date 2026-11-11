@@ -124,4 +124,24 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict
             raise AppError(errors[-1].get("code", "error"), errors[-1]["message"], errors[-1]["status"])
         raise AppError("no_assets", "No matching unused images/videos. Upload or sync media, "
                        "or tick 'include already-used assets'.", 409)
+    _notify_new_drafts(db, posts)
     return {"posts": [get_post(db, p.id) for p in posts], "errors": errors, "available": available}
+
+
+MAX_DRAFT_PUSHES = 10
+
+
+def _notify_new_drafts(db: Session, posts: list) -> None:
+    """One push per new draft with an Approve button (Telegram), so a batch can be approved from the phone.
+    Capped per batch; the rest are mentioned in one line."""
+    from app.services.notifications import notify
+
+    for post in posts[:MAX_DRAFT_PUSHES]:
+        stored = get_post(db, post.id)
+        snippet = " ".join((stored.caption or "").split())[:200]
+        media = f"\n[{stored.asset.media_type}: {stored.asset.filename}]" if stored.asset else ""
+        notify(db, "draft_ready", f"draft:{stored.id}", f"New draft #{stored.id} · {stored.platform} {stored.content_type}",
+               snippet + media, url=f"/posts/{stored.id}", buttons=[("Approve ✅", f"approve:{stored.id}")])
+    if len(posts) > MAX_DRAFT_PUSHES:
+        notify(db, "draft_ready", f"drafts:{posts[0].id}:more", f"{len(posts) - MAX_DRAFT_PUSHES} more new drafts",
+               "Open the studio to review them.", url="/posts?status_filter=draft")

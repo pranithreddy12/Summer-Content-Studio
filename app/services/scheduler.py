@@ -25,6 +25,7 @@ from app.config import get_settings, publishing_mode
 from app.db import utcnow
 from app.models import ContentPost, PostStatus, PostingRule, WorkerHeartbeat
 from app.services import dropbox_link
+from app.services.notifications import poll_telegram
 
 logger = logging.getLogger("app.services.scheduler")
 
@@ -388,6 +389,7 @@ def run_once(db, now, http=None) -> dict:
         stage("fanvue_links", lambda: fanvue_links_stage(db, now, http, result))
         stage("fanvue_digest", lambda: fanvue_digest_stage(db, now, http, result))
     stage("fan_purge", lambda: fan_purge_stage(db, now, result))
+    stage("telegram_approvals", lambda: result.__setitem__("telegram_approved", poll_telegram(db)))
     if dropbox_link.configured(settings):
         stage("dropbox_purge", lambda: result.__setitem__("dropbox_purged", dropbox_link.purge_posted(db)))
     if settings.AUTO_PLAN_ENABLED:
