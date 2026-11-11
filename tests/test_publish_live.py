@@ -174,6 +174,18 @@ def test_live_end_to_end_instagram_reel_through_the_real_module(live, monkeypatc
     assert db().query(PublishAttempt).one().platform_ref == "C9"
 
 
+def test_live_success_pushes_a_posted_message_with_the_post_link(live, monkeypatch):
+    stub_publisher(monkeypatch)
+    sent = []
+    monkeypatch.setattr("app.services.notifications.notify",
+                        lambda db, event, key, title, body="", url=None, http=None: sent.append((event, key, title, body, url)) or True)
+    pid = make_post(live)
+    pub.publish_post(db(), pid, now=NOON, http=NoHttp())
+    ((event, key, title, body, url),) = sent
+    assert (event, key, title, url) == ("published", f"published:{pid}", "Posted to Instagram", f"/posts/{pid}")
+    assert "Hello world" in body and body.endswith("https://www.instagram.com/p/abc/")  # caption snippet + the live link
+
+
 def test_tiktok_inbox_success_is_sent_to_drafts_not_published(phase2, client, monkeypatch, env):
     phase2(PUBLISHING_MODE="live")
     make_account("tiktok")

@@ -324,11 +324,15 @@ def _apply_success(db: Session, post: ContentPost, attempt: PublishAttempt, resu
     attempt.success, attempt.finished_at = True, now
     attempt.platform_ref = result.platform_ref or attempt.platform_ref
     db.commit()
-    if inbox:
-        from app.services.notifications import notify
+    from app.services.notifications import notify
 
+    if inbox:
         notify(db, "tiktok_ready", f"tiktok:{post.id}", "Video is in your TikTok drafts",
                "Open TikTok, add the AI label and press Publish.", url=f"/posts/{post.id}")
+    else:  # live and public: a caption snippet plus the platform's own link to the post (when the platform gave one)
+        snippet = " ".join((post.caption or "").split())[:80]
+        notify(db, "published", f"published:{post.id}", f"Posted to {post.platform.title()}",
+               "\n".join(part for part in (snippet, post.external_url) if part), url=f"/posts/{post.id}")
     return post
 
 
