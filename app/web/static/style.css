@@ -1112,3 +1112,7 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
   .calendar-grid { grid-template-columns: 1fr; }
   .week-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* calendar drag-and-drop: scheduled chips can be dragged onto another day */
+.cal-slot[draggable="true"] { cursor: grab; }
+.cal-day.cal-drop { outline: 2px dashed var(--accent, #e6a03c); outline-offset: -2px; }

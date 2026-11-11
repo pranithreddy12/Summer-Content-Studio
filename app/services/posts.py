@@ -274,6 +274,25 @@ def approve_post(db: Session, post_id: int) -> ContentPost:
     return post
 
 
+def reschedule_post(db: Session, post_id: int, new_time: datetime) -> ContentPost:
+    """Move a SCHEDULED post to another time (calendar drag / edit). The time must be in the future and inside
+    the platform's posting window, otherwise the worker would refuse it at its slot. A manual move is a user-set
+    time: the planner never moves it again (update_post sets planned_by='user')."""
+    from app.services.publishing import get_rule
+    from app.services.window import in_window
+
+    post = get_post(db, post_id)
+    if not post:
+        raise AppError("not_found", "Post not found", status=404)
+    if post.status != PostStatus.scheduled.value:
+        raise AppError("invalid_transition", f"Only scheduled posts can be moved (this one is {post.status}).", status=409)
+    rule = get_rule(db, post.model_profile_id, post.platform)
+    if not in_window(rule, new_time):
+        raise AppError("outside_window",
+                       f"That time is outside the posting window ({rule.window_start}-{rule.window_end}).", status=422)
+    return update_post(db, post_id, PostUpdate(planned_publish_at=new_time))
+
+
 def archive_post(db: Session, post_id: int) -> ContentPost:
     """Archive a post."""
     post = get_post(db, post_id)

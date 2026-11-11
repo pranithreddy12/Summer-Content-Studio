@@ -6,7 +6,8 @@
     <div>
       <span class="eyebrow">Calendar</span>
       <h1>Week of {{ days[0].date.strftime('%d %b') }}</h1>
-      <p class="page-lede">Scheduled and published posts, 7 columns. Times shown in {{ timezone }}.</p>
+      <p class="page-lede">Scheduled and published posts, 7 columns. Times shown in {{ timezone }}.
+      <strong>Drag a scheduled post to another day</strong> (it keeps its time), or double-click it to type a new date and time. Moves are saved straight away and must be in the future and inside the posting window.</p>
     </div>
     <div class="page-actions">
       <a class="btn" href="/calendar?week={{ prev_week }}">&larr; Prev week</a>
@@ -18,11 +19,12 @@
 
   <div class="calendar-grid">
     {% for day in days %}
-    <div class="cal-day{% if day.date.isoformat() == today %} cal-today{% endif %}">
+    <div class="cal-day{% if day.date.isoformat() == today %} cal-today{% endif %}" data-day="{{ day.date.isoformat() }}">
       <div class="cal-head">{{ day.date.strftime('%a') }} <span>{{ day.date.strftime('%d') }}</span></div>
       {% for post in day.posts %}
       <a class="cal-slot slot-{{ post.status }}{% if post.planned_by == 'planner' %} slot-planner{% endif %}{% if not post.in_window %} slot-out-of-window{% endif %}"
          href="/posts/{{ post.id }}"
+         {% if post.status == 'scheduled' %}draggable="true" data-post-id="{{ post.id }}" data-time="{{ (post.planned_publish_at | local).strftime('%H:%M') }}" data-day="{{ day.date.isoformat() }}"{% endif %}
          title="{{ post.status }} · {{ post.platform }}{% if not post.in_window %} · outside the posting window{% endif %}">
         {{ (post.planned_publish_at | local).strftime('%H:%M') }} {{ post.platform[:2] }}
       </a>
@@ -30,5 +32,50 @@
     </div>
     {% endfor %}
   </div>
+  <p class="small" id="cal-msg" role="status" aria-live="polite"></p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Reschedule by drag (to another day, same time) or double-click (type "YYYY-MM-DD HH:MM"). Saved on the server.
+const msg = document.getElementById('cal-msg');
+async function move(postId, day, time) {
+  try {
+    const r = await fetch('/calendar/move', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({post_id: postId, day: day, time: time || null}),
+    });
+    const data = await r.json().catch(() => ({}));
+    msg.textContent = data.message || (r.ok ? 'Moved.' : 'Could not move that post.');
+    if (r.ok) setTimeout(() => location.reload(), 600);
+  } catch (e) {
+    msg.textContent = 'Could not reach the server.';
+  }
+}
+document.querySelectorAll('.cal-slot[draggable]').forEach((el) => {
+  el.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', el.dataset.postId);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  el.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    const answer = prompt('Move to (YYYY-MM-DD HH:MM):', el.dataset.day + ' ' + el.dataset.time);
+    if (!answer) return;
+    const [day, time] = answer.trim().split(/\s+/);
+    move(el.dataset.postId, day, time);
+  });
+});
+document.querySelectorAll('.cal-day').forEach((cell) => {
+  cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('cal-drop'); });
+  cell.addEventListener('dragleave', () => cell.classList.remove('cal-drop'));
+  cell.addEventListener('drop', (e) => {
+    e.preventDefault();
+    cell.classList.remove('cal-drop');
+    const id = e.dataTransfer.getData('text/plain');
+    if (id) move(id, cell.dataset.day, null);
+  });
+});
+</script>
 {% endblock %}

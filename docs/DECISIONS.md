@@ -258,3 +258,10 @@ Gate: Lee confirms H3/H5 in writing **and** at least 50 human-approved drafts ha
 - Planner page: per platform a start date (default tomorrow) and a days drop-down; API `POST /api/v1/planner/plan` takes `days` (default 7). The auto-planner, CLI and scheduler keep the 7-day default.
 - Tests: `test_plan_range_of_1_to_7_days`, `test_plan_days_outside_1_to_7_is_refused`.
 - Process note: two earlier edits of `planner.html` through PowerShell `Set-Content` re-encoded its text (garbled dashes) and were pushed; the file was restored from `02a8863` and re-edited with the editor tool. Nothing else was affected.
+
+## Calendar: drag a scheduled post to another day, or edit its time (2026-11-12)
+**Why:** the developer wants to reschedule posts by hand on the calendar (e.g. move 5 test posts to tomorrow) and have it saved.
+- `posts.reschedule_post`: only `scheduled` posts; the new time must be in the future and inside the platform's posting window (otherwise the worker would refuse it at its slot, so the app refuses it up front). It goes through `update_post`, so the time becomes a user-set one (`planned_by='user'`) and the planner never moves it again. The planner's minimum gap is not applied to manual moves.
+- `POST /calendar/move` `{post_id, day, time?}` (no time = keep the time of day) returns `{ok, message}`; errors are 422/409/404 with a readable message. Same-origin Basic auth and the existing CSRF/Origin check apply, as for every other request.
+- Calendar page: scheduled chips are draggable onto another day column; double-click opens a prompt for `YYYY-MM-DD HH:MM`. Plain HTML5 drag-and-drop, no library. Known limit: touch screens do not fire HTML5 drag events, so on a phone use the double-click prompt or the time field on the post page.
+- Tests: `tests/test_calendar_move.py` (5). The drag gesture itself was not exercised in a real browser; the script was syntax-checked and the endpoint is tested.

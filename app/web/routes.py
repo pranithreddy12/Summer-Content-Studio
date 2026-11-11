@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from app.api.dependencies import get_claude_client
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session, joinedload
@@ -1006,6 +1006,39 @@ async def planner_run(
     if result.topup_drafts:
         msg += f", {len(result.topup_drafts)} AI drafts added"
     return redirect_with_flash("/planner", msg)
+
+
+@router.post("/calendar/move")
+async def calendar_move(request: Request, db: Session = Depends(get_db)):
+    """Calendar drag-and-drop / edit: {post_id, day: YYYY-MM-DD, time?: HH:MM}. No time = keep the post's
+    current time of day. Saved straight away (services.posts.reschedule_post)."""
+    from datetime import time as _time
+    from zoneinfo import ZoneInfo
+    from app.services import AppError
+    from app.services.posts import reschedule_post
+
+    try:
+        body = await request.json()
+        post_id, day = int(body["post_id"]), date.fromisoformat(str(body["day"]))
+        if not 0 < post_id < 2 ** 62:
+            raise ValueError("post_id")
+        post = get_post(db, post_id)
+        tz = ZoneInfo(get_settings().APP_TIMEZONE)
+        if body.get("time"):
+            hh, mm = str(body["time"]).split(":")
+            at = _time(int(hh), int(mm))
+        elif post and post.planned_publish_at:
+            at = post.planned_publish_at.astimezone(tz).time().replace(second=0, microsecond=0)
+        else:
+            raise ValueError("no time")
+        new_time = datetime.combine(day, at, tzinfo=tz).astimezone(timezone.utc)
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return JSONResponse({"ok": False, "message": "Pick a valid day and time (HH:MM)."}, status_code=422)
+    try:
+        moved = reschedule_post(db, post_id, new_time)
+    except AppError as e:
+        return JSONResponse({"ok": False, "message": e.message}, status_code=e.status)
+    return {"ok": True, "message": "Moved to " + moved.planned_publish_at.astimezone(tz).strftime("%a %d %b %H:%M")}
 
 
 @router.get("/calendar", response_class=HTMLResponse)
