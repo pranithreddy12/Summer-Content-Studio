@@ -175,7 +175,8 @@ def create_app() -> FastAPI:
                 return JSONResponse(
                     status_code=401,
                     content={"error": {"code": "unauthorized", "message": "Authentication required"}},
-                    headers={"WWW-Authenticate": "Basic"},
+                    # RFC 7617 requires a realm; some browsers show no login popup without one
+                    headers={"WWW-Authenticate": 'Basic realm="Summer Studio", charset="UTF-8"'},
                 )
 
         # CSRF mitigation: every unsafe request (dashboard AND /api) that carries an Origin/Referer
