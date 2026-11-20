@@ -405,3 +405,16 @@ def test_no_endpoint_yields_published(client, fake_claude):
     # Status transitions only exist via action endpoints; PATCH rejects status
     resp = client.patch(f"/api/v1/posts/{post_id}", json={"status": "published"})
     assert resp.status_code == 422
+
+
+def test_dashboard_approve_goes_back_where_you_came_from_and_ignores_offsite_next(client):
+    a = _create_post(client).json()["id"]
+    b = _create_post(client).json()["id"]
+    r = client.post(f"/posts/{a}/approve", data={"next": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?msg=") and client.get(f"/api/v1/posts/{a}").json()["status"] == "approved"
+    r = client.post(f"/posts/{b}/approve", data={"next": "https://evil.com"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?msg=")  # off-site value falls back to a safe path, never leaves the site
+    # next with its own query string keeps one well-formed query
+    c = _create_post(client).json()["id"]
+    r = client.post(f"/posts/{c}/approve", data={"next": "/posts?status_filter=draft"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/posts?status_filter=draft&msg=")

@@ -430,7 +430,7 @@ def test_overview_and_post_detail_show_engagement(api):
     d = db()
     d.add(PostMetric(post_id=pid, fetched_at=LATER, likes=12, comments=4))
     d.commit()
-    assert "Comments to answer" in api.client.get("/").text
+    assert "comments to answer" in api.client.get("/").text
     assert "12 likes" in api.client.get(f"/posts/{pid}").text
 
 

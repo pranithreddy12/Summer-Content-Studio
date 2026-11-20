@@ -1121,3 +1121,109 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .cal-tools .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .cal-week-title { margin-top: 22px; }
 .cal-slot.cal-pending { border-style: dashed; border-color: #e6a03c; background: rgba(230, 160, 60, 0.12); }
+
+/* ============================================================
+   Work lists (Overview, Queue) and the draft decision bar
+   One row = one post: thumbnail, what it says, where it stands, what you can do.
+   ============================================================ */
+.wl-summary { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 4px 0 8px; }
+.wl-summary a { color: var(--text-2); text-decoration: none; font-size: 0.95rem; }
+.wl-summary a:hover { color: var(--accent-strong); }
+.wl-summary strong { color: var(--text); font-weight: 600; margin-right: 4px; font-variant-numeric: tabular-nums; }
+
+.wl { list-style: none; margin: 0; padding: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.wl-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); }
+.wl-item:first-child { border-top: 0; }
+.wl-item:hover { background: var(--surface-2); }
+.wl-item-queue { grid-template-columns: 64px minmax(0, 1fr) 150px 220px; }
+.wl-item-compact { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 9px 16px; }
+.wl-thumb { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--surface-3); border: 1px solid var(--border); display: grid; place-items: center; color: var(--faint); font-size: 0.65rem; text-align: center; text-decoration: none; }
+.wl-item-compact .wl-thumb { width: 44px; height: 44px; }
+.wl-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wl-main { min-width: 0; }
+.wl-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text); text-decoration: none; font-size: 0.95rem; line-height: 1.4; }
+.wl-title-1 { -webkit-line-clamp: 1; }
+.wl-title:hover { color: var(--accent-strong); }
+.wl-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 4px; font-size: 0.8rem; color: var(--muted); }
+.wl-meta strong { color: var(--text-2); font-weight: 600; }
+.wl-id { color: var(--faint); font-variant-numeric: tabular-nums; }
+.wl-state { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+.wl-when { font-size: 0.85rem; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wl-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.wl-details { margin-top: 28px; }
+.wl-details summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; margin-bottom: 12px; }
+.wl-details summary:hover { color: var(--text); }
+
+.decide { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 0 0 16px; padding: 12px 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); position: sticky; top: 8px; z-index: 5; }
+.decide-skip { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 0.88rem; }
+.decide-skip:hover { color: var(--accent-strong); }
+
+@media (max-width: 760px) {
+  .wl-item, .wl-item-queue { grid-template-columns: 56px minmax(0, 1fr); }
+  .wl-thumb { width: 56px; height: 56px; }
+  .wl-state, .wl-actions, .wl-when { grid-column: 1 / -1; }
+  .wl-state { flex-direction: row; align-items: center; justify-content: space-between; }
+  .wl-actions { justify-content: flex-start; }
+  .wl-item-compact .wl-when { grid-column: 2; }
+  .decide-skip { margin-left: 0; }
+}
+
+/* ============================================================
+   Sidebar v2: grouped by workflow, badges, mode line, phone menu
+   (later rules on purpose: they replace the older sidebar rules above)
+   ============================================================ */
+.skip-link { position: absolute; left: -999px; top: 8px; z-index: 100; padding: 8px 14px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; text-decoration: none; font-weight: 600; }
+.skip-link:focus { left: 8px; }
+
+.sidebar { gap: 18px; padding-top: 22px; }
+.brand-text em { text-transform: none; letter-spacing: 0; font-size: 0.74rem; font-weight: 500; color: var(--muted); }
+.side-nav { overflow-y: auto; margin: 0 -6px; padding: 0 6px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.nav-group { margin-top: 14px; }
+.nav-label { text-transform: none; letter-spacing: 0; font-size: 0.76rem; font-weight: 600; color: var(--faint); padding: 0 12px; margin-bottom: 4px; }
+.nav-item a { padding: 7px 12px; }
+.nav-item a:focus-visible { outline: none; box-shadow: var(--ring); }
+.nav-badge { margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.72rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+
+.sidebar-foot { display: flex; flex-direction: column; gap: 12px; font-size: inherit; }
+.mode { display: flex; gap: 10px; align-items: flex-start; }
+.mode-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--faint); }
+.mode-live .mode-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.mode-dry_run .mode-dot, .mode-reminders .mode-dot { background: var(--warn); }
+.mode strong { display: block; color: var(--text-2); font-size: 0.84rem; font-weight: 600; }
+.mode span:not(.mode-dot) { display: block; color: var(--muted); font-size: 0.76rem; line-height: 1.4; }
+.logout { margin: 0; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.linkbtn:hover { color: var(--text); }
+.nav-toggle { display: none; }
+
+@media (max-width: 900px) {
+  .sidebar { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 16px; }
+  .nav-toggle { display: inline-flex; padding: 7px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: 0.88rem; cursor: pointer; }
+  .side-nav { display: none; flex-basis: 100%; margin: 0; padding: 4px 0 0; }
+  .sidebar.open .side-nav { display: block; }
+  .nav-list { flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  .nav-label { display: block; }
+  .nav-item a { padding: 10px 12px; }
+  .sidebar-foot { display: none; }
+  .sidebar.open .sidebar-foot { display: flex; flex-basis: 100%; padding-top: 12px; }
+}
+
+/* ============================================================
+   Generate: one form at a time
+   ============================================================ */
+.gen { max-width: 760px; }
+.gen-library { margin: 0 0 16px; font-size: 0.9rem; color: var(--text-2); }
+.gen-library strong { color: var(--text); }
+.gen-library-empty { padding: 12px 14px; background: var(--warn-soft); border: 1px solid var(--warn-line); border-radius: var(--radius-sm); color: var(--warn); }
+.gen-library-empty strong { color: var(--warn); }
+.gen-intro { margin: 0 0 20px; color: var(--muted); font-size: 0.9rem; line-height: 1.55; max-width: 62ch; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; padding: 4px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; max-width: 100%; }
+.seg-btn { padding: 8px 16px; background: none; border: 0; border-radius: 10px; color: var(--muted); font: inherit; font-size: 0.9rem; font-weight: 500; cursor: pointer; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-strong); }
+.seg-btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.opt { margin-left: 6px; color: var(--faint); font-weight: 400; font-size: 0.78rem; }
+.more { margin: 4px 0 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+.more > summary { cursor: pointer; color: var(--text-2); font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; }
+.more:not([open]) > summary { margin-bottom: 0; }
+.form-box[hidden] { display: none; }

@@ -1,6 +1,7 @@
 """Dashboard web routes."""
 
 import uuid
+from pathlib import Path
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -43,6 +44,37 @@ def local_time(value, tz_name: Optional[str] = None):
 
 templates.env.filters["local"] = local_time
 
+_PLATFORM_NAMES = {"instagram": "Instagram", "tiktok": "TikTok", "fanvue": "Fanvue", "x": "X"}
+
+
+def when(value):
+    """'Fri 20 Nov, 17:55' in the display timezone; empty for None."""
+    v = local_time(value)
+    return v.strftime("%a %d %b, %H:%M") if v else ""
+
+
+templates.env.filters["when"] = when
+def nav_counts() -> dict:
+    """Numbers for the sidebar badges (drafts waiting, comments to answer). Never breaks a page."""
+    try:
+        from app.db import session_scope
+        from app.services.engagement import unanswered_count
+        with session_scope() as db:
+            drafts = db.execute(select(func.count(ContentPost.id)).where(ContentPost.status == PostStatus.draft.value)).scalar() or 0
+            return {"drafts": drafts, "comments": unanswered_count(db)}
+    except Exception:
+        return {"drafts": 0, "comments": 0}
+
+
+templates.env.globals["nav_counts"] = nav_counts
+# Cache-buster for /static/style.css: browsers keep the old stylesheet after a deploy otherwise
+try:
+    templates.env.globals["css_v"] = int((Path(__file__).parent / "static" / "style.css").stat().st_mtime)
+except OSError:
+    templates.env.globals["css_v"] = 0
+templates.env.filters["plat"] = lambda s: _PLATFORM_NAMES.get(str(s), str(s).capitalize())
+templates.env.filters["ctype"] = lambda s: str(s).replace("_", " ").capitalize()
+
 # One source for every platform/content-type picker (Fanvue included since Phase 3)
 from app.prompts.platforms import CONTENT_TYPES as _CONTENT_TYPES  # noqa: E402
 
@@ -77,7 +109,15 @@ def redirect_with_flash(url: str, message: str, kind: str = "ok") -> RedirectRes
     from urllib.parse import quote
     if isinstance(message, dict):  # HTTPException(detail={"code", "message"})
         message = str(message.get("message") or message.get("code") or "Request failed")
-    return RedirectResponse(f"{url}?msg={quote(str(message))}&kind={kind}", status_code=status.HTTP_303_SEE_OTHER)
+    sep = "&" if "?" in url else "?"
+    return RedirectResponse(f"{url}{sep}msg={quote(str(message))}&kind={kind}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _next_draft_id(db: Session, post_id: int) -> Optional[int]:
+    """Another draft to review after this one: the next higher id, else the lowest other draft."""
+    base = select(ContentPost.id).where(ContentPost.status == PostStatus.draft.value, ContentPost.id != post_id)
+    return (db.execute(base.where(ContentPost.id > post_id).order_by(ContentPost.id).limit(1)).scalar()
+            or db.execute(base.order_by(ContentPost.id).limit(1)).scalar())
 
 
 def get_settings_dep():
@@ -101,12 +141,13 @@ async def overview(
 ):
     """Dashboard overview page."""
     dashboard_stats = stats(db)
-    recent_posts = db.execute(
+    # Drafts waiting for a decision: soonest planned slot first, unplanned ones last
+    needs_approval = db.execute(
         select(ContentPost)
-        .options(joinedload(ContentPost.asset), joinedload(ContentPost.profile))
-        .where(ContentPost.status != PostStatus.archived.value)
-        .order_by(desc(ContentPost.created_at))
-        .limit(10)
+        .options(joinedload(ContentPost.asset))
+        .where(ContentPost.status == PostStatus.draft.value)
+        .order_by(ContentPost.planned_publish_at.is_(None), ContentPost.planned_publish_at, ContentPost.id)
+        .limit(6)
     ).scalars().all()
 
     upcoming = db.execute(
@@ -128,7 +169,7 @@ async def overview(
     return _template_response("overview.html", {
         "request": request,
         "stats": dashboard_stats,
-        "recent_posts": recent_posts,
+        "needs_approval": needs_approval,
         "upcoming": upcoming,
         "flash": get_flash(request),
         "worker_last_seen": worker_last_seen,
@@ -656,6 +697,7 @@ async def post_detail(
         "metrics": latest_metrics(db, post_id),
         "preflight": preflight_reasons(db, post, utcnow()) if post.status in ("approved", "scheduled", "failed") else [],
         "variants": variants,
+        "next_draft_id": _next_draft_id(db, post_id) if post.status == PostStatus.draft.value else None,
         "campaigns": campaigns,
         "all_tags": all_tags,
         "timezone": get_settings().APP_TIMEZONE,
@@ -762,27 +804,32 @@ async def post_apply_variant(
 @router.post("/posts/{post_id}/approve")
 async def post_approve(
     post_id: int,
+    next: str = Form(""),  # where to land afterwards (overview, queue, next draft); same-site paths only
     db: Session = Depends(get_db),
 ):
     """Approve a post."""
+    from app.security import safe_next
+    dest = safe_next(next) if next else f"/posts/{post_id}"
     try:
         approve_post(db, post_id)
-        return redirect_with_flash(f"/posts/{post_id}", "Post approved")
+        return redirect_with_flash(dest, f"Post #{post_id} approved")
     except HTTPException as e:
-        return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
+        return redirect_with_flash(dest, e.detail, "error")
     except Exception as e:
-        return redirect_with_flash(f"/posts/{post_id}", str(e), "error")
+        return redirect_with_flash(dest, str(e), "error")
 
 
 @router.post("/posts/{post_id}/archive")
 async def post_archive(
     post_id: int,
+    next: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Archive a post."""
+    from app.security import safe_next
     try:
         archive_post(db, post_id)
-        return redirect_with_flash("/posts", "Post archived")
+        return redirect_with_flash(safe_next(next) if next else "/posts", "Post archived")
     except HTTPException as e:
         return redirect_with_flash(f"/posts/{post_id}", e.detail, "error")
     except Exception as e:

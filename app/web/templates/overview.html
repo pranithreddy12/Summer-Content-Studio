@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Overview — Summer Content{% endblock %}
 {% block content %}
+{% set live = settings.PUBLISHING_MODE == 'live' %}
+{% set waiting = stats.drafts_awaiting_approval %}
 <div class="page">
   <header class="page-head">
     <div>
-      <span class="eyebrow">Dashboard</span>
       <h1>Overview</h1>
-      <p class="page-lede">Everything in the pipeline right now — assets, drafts and scheduled posts across platforms.</p>
+      <p class="page-lede">
+        {% if waiting %}<strong>{{ waiting }} draft{{ '' if waiting == 1 else 's' }}</strong> waiting for your approval.
+        {% else %}Nothing is waiting for approval.{% endif %}
+      </p>
     </div>
     <div class="page-actions">
       <a href="/generate" class="btn btn-primary">Generate draft</a>
@@ -15,32 +19,12 @@
     </div>
   </header>
 
-  <div class="stat-grid">
-    <div class="stat">
-      <div class="stat-value">{{ stats.total_assets }}</div>
-      <div class="stat-label">Active assets</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">{{ stats.total_posts }}</div>
-      <div class="stat-label">Total posts</div>
-    </div>
-    <div class="stat stat-accent">
-      <div class="stat-value">{{ stats.drafts_awaiting_approval }}</div>
-      <div class="stat-label">Drafts awaiting approval</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">{{ stats.approved }}</div>
-      <div class="stat-label">Approved</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">{{ stats.scheduled }}</div>
-      <div class="stat-label">Scheduled</div>
-      <div class="stat">
-      <div class="stat-value">{{ unanswered }}</div>
-      <div class="stat-label"><a href="/engagement">Comments to answer</a></div>
-    </div>
-  </div>
-  </div>
+  <nav class="wl-summary" aria-label="At a glance">
+    <a href="/posts?status_filter=scheduled"><strong>{{ stats.scheduled }}</strong> scheduled</a>
+    <a href="/posts?status_filter=approved"><strong>{{ stats.approved }}</strong> approved</a>
+    <a href="/engagement"><strong>{{ unanswered }}</strong> comments to answer</a>
+    <a href="/assets"><strong>{{ stats.total_assets }}</strong> assets</a>
+  </nav>
 
   {% if settings.PUBLISHING_MODE != 'off' and not worker_ok and stats.scheduled > 0 %}
   <div class="banner banner-critical" style="margin-top:16px;">
@@ -51,9 +35,70 @@
 
   <section class="section">
     <div class="section-head">
-      <h2>Posts by platform & status</h2>
-      <span class="section-note">Counts exclude nothing — archived included.</span>
+      <h2>Waiting for your approval</h2>
+      {% if waiting > needs_approval|length %}<a class="section-note" href="/posts?status_filter=draft">See all {{ waiting }} &rarr;</a>{% endif %}
     </div>
+    {% if needs_approval %}
+    <ul class="wl">
+      {% for post in needs_approval %}
+      <li class="wl-item">
+        <a class="wl-thumb" href="/posts/{{ post.id }}" tabindex="-1" aria-hidden="true">
+          {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}<img src="/api/v1/assets/{{ post.asset.id }}/file" alt="" loading="lazy">{% else %}<span>No image</span>{% endif %}
+        </a>
+        <div class="wl-main">
+          <a class="wl-title" href="/posts/{{ post.id }}">{{ post.caption }}</a>
+          <div class="wl-meta">
+            <strong>{{ post.platform | plat }}</strong>
+            <span>{{ post.content_type | ctype }}</span>
+            <span>{{ post.campaign }}</span>
+            <span>{% if post.planned_publish_at %}Planned {{ post.planned_publish_at | when }}{% else %}No time set{% endif %}</span>
+          </div>
+        </div>
+        <div class="wl-actions">
+          <a href="/posts/{{ post.id }}" class="btn btn-sm">Review</a>
+          <form method="post" action="/posts/{{ post.id }}/approve" class="inline-form"{% if live %} onsubmit="return confirm('Approve post #{{ post.id }}? Live mode: it will publish automatically at its planned time.')"{% endif %}>
+            <input type="hidden" name="next" value="/">
+            <button type="submit" class="btn btn-sm btn-ok">Approve</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state card">
+      <div class="empty-title">You're all caught up</div>
+      <div>New drafts show up here. <a href="/generate">Generate some</a> or let the weekly plan fill the queue.</div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Going out next</h2>
+      <span class="section-note">Times in {{ settings.APP_TIMEZONE }}</span>
+    </div>
+    {% if upcoming %}
+    <ul class="wl">
+      {% for post in upcoming %}
+      <li class="wl-item wl-item-compact">
+        <a class="wl-thumb" href="/posts/{{ post.id }}" tabindex="-1" aria-hidden="true">
+          {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}<img src="/api/v1/assets/{{ post.asset.id }}/file" alt="" loading="lazy">{% else %}<span>No image</span>{% endif %}
+        </a>
+        <div class="wl-main">
+          <a class="wl-title wl-title-1" href="/posts/{{ post.id }}">{{ post.caption }}</a>
+          <div class="wl-meta"><strong>{{ post.platform | plat }}</strong><span>{{ post.content_type | ctype }}</span></div>
+        </div>
+        <div class="wl-when">{{ post.planned_publish_at | when }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="small">Nothing scheduled yet. Approve a draft with a planned time and it appears here.</p>
+    {% endif %}
+  </section>
+
+  <details class="wl-details">
+    <summary>Counts by platform and status</summary>
     <div class="table-wrap card">
       <table class="table">
         <thead>
@@ -70,7 +115,7 @@
         <tbody>
           {% for platform, counts in stats.by_platform_status.items() %}
           <tr>
-            <td><strong>{{ platform }}</strong></td>
+            <td><strong>{{ platform | plat }}</strong></td>
             <td class="td-num">{{ counts.draft }}</td>
             <td class="td-num">{{ counts.approved }}</td>
             <td class="td-num">{{ counts.scheduled }}</td>
@@ -82,81 +127,6 @@
         </tbody>
       </table>
     </div>
-  </section>
-
-  <section class="section">
-    <div class="section-head">
-      <h2>Recent posts</h2>
-      <a class="section-note" href="/posts">View full queue →</a>
-    </div>
-    {% if recent_posts %}
-    <div class="table-wrap card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Platform</th>
-            <th>Campaign</th>
-            <th>Status</th>
-            <th>Caption</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for post in recent_posts %}
-          <tr>
-            <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
-            <td>{{ post.platform }}</td>
-            <td>{{ post.campaign }}</td>
-            <td><span class="badge badge-{{ post.status }}">{{ post.status }}</span></td>
-            <td class="truncate">{{ post.caption[:100] }}{% if post.caption|length > 100 %}…{% endif %}</td>
-            <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="empty-state card">
-      <div class="empty-title">No posts yet</div>
-      <div>Generate your first draft from the <a href="/generate">Generate</a> page.</div>
-    </div>
-    {% endif %}
-  </section>
-
-  <section class="section">
-    <div class="section-head">
-      <h2>Upcoming — next 7 scheduled</h2>
-      <span class="section-note">Times shown in UTC.</span>
-    </div>
-    {% if upcoming %}
-    <div class="table-wrap card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Platform</th>
-            <th>Campaign</th>
-            <th>Planned</th>
-            <th>Caption</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for post in upcoming %}
-          <tr>
-            <td><a href="/posts/{{ post.id }}">#{{ post.id }}</a></td>
-            <td>{{ post.platform }}</td>
-            <td>{{ post.campaign }}</td>
-            <td><span class="mono">{{ post.planned_publish_at.strftime('%Y-%m-%d %H:%M') }} UTC</span></td>
-            <td class="truncate">{{ post.caption[:100] }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <p class="small">Nothing scheduled yet.</p>
-    {% endif %}
-  </section>
+  </details>
 </div>
 {% endblock %}

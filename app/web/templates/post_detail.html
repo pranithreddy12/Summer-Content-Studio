@@ -5,9 +5,8 @@
   <a class="back-link" href="/posts">&larr; Content Queue</a>
   <header class="page-head">
     <div>
-      <span class="eyebrow">Post #{{ post.id }}</span>
       <h1>{{ post.hook or 'Untitled draft' }}</h1>
-      <p class="page-lede">{{ post.platform }} · {{ post.content_type }} · campaign <strong>{{ post.campaign }}</strong></p>
+      <p class="page-lede">Post #{{ post.id }}: {{ post.platform | plat }} {{ post.content_type | ctype | lower }}, campaign <strong>{{ post.campaign }}</strong></p>
     </div>
     <div class="page-actions">
       <span class="badge badge-{{ post.status }}">{{ post.status }}</span>
@@ -33,6 +32,20 @@
     {% elif post.status == 'failed' %}
       Failed.
     {% endif %}</div>
+
+  {% if post.status == 'draft' %}
+  <div class="decide" role="region" aria-label="Decide on this draft">
+    <form method="post" action="/posts/{{ post.id }}/approve" class="inline-form"{% if mode == 'live' %} onsubmit="return confirm('Approve post #{{ post.id }}? Live mode: it will publish automatically at its planned time.')"{% endif %}>
+      <input type="hidden" name="next" value="{{ '/posts/' ~ next_draft_id if next_draft_id else '/' }}">
+      <button type="submit" class="btn btn-ok">{% if next_draft_id %}Approve and open next draft{% else %}Approve{% endif %}</button>
+    </form>
+    <form method="post" action="/posts/{{ post.id }}/archive" class="inline-form" onsubmit="return confirm('Archive post #{{ post.id }}?')">
+      <input type="hidden" name="next" value="{{ '/posts/' ~ next_draft_id if next_draft_id else '/posts' }}">
+      <button type="submit" class="btn btn-ghost">Archive</button>
+    </form>
+    {% if next_draft_id %}<a class="decide-skip" href="/posts/{{ next_draft_id }}">Skip to next draft &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
 
   <div class="post-layout">
     <div class="post-main">

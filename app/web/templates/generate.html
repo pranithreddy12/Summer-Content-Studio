@@ -1,160 +1,167 @@
 {% extends "base.html" %}
 {% block title %}Generate — Summer Content{% endblock %}
+{% set start = 'asset' if selected_asset else 'random' %}
 {% block content %}
 <div class="page">
-  <a class="back-link" href="/assets">&larr; Media Library</a>
   <header class="page-head">
     <div>
-      <span class="eyebrow">Create</span>
-      <h1>Generate Content</h1>
-      <p class="page-lede">Pick a profile, platform and asset — Claude drafts the hook, caption, hashtags, CTA and reviewer notes.</p>
+      <h1>Generate</h1>
+      <p class="page-lede">The AI writes the hook, caption, hashtags and call to action. Every draft waits for your approval.</p>
     </div>
   </header>
 
-  <div class="generate-flow">
-    <div class="generate-main">
-      {% if error %}
-      <div class="flash flash-error">
-        <span>{{ error }}</span>
-        <button class="flash-dismiss" onclick="this.parentElement.remove()" aria-label="Dismiss">&times;</button>
-      </div>
+  <div class="gen">
+    {% if error %}
+    <div class="flash flash-error">
+      <span>{{ error }}</span>
+      <button class="flash-dismiss" onclick="this.parentElement.remove()" aria-label="Dismiss">&times;</button>
+    </div>
+    {% endif %}
+
+    <div class="gen-library {{ 'gen-library-empty' if eligible_count == 0 }}">
+      {% if eligible_count == 0 %}
+      <strong>No unused media.</strong> Random drafts need an uploaded or synced image or video that has no draft yet. <a href="/assets/new">Add media</a>
+      {% else %}
+      <strong>{{ eligible_count }}</strong> unused {{ 'file' if eligible_count == 1 else 'files' }} ready for random drafts.
       {% endif %}
+    </div>
 
-      <form method="post" action="/generate/random" class="form-box" id="random-form">
-        <h3>Surprise me &mdash; random draft from your library</h3>
-        <p class="small">Picks random <strong>unused</strong> images/videos (uploaded, or synced from your Dropbox folder), the AI looks at them, and saves drafts for you to review. Nothing is published.
-          <strong>{{ eligible_count }}</strong> eligible asset{{ '' if eligible_count == 1 else 's' }} right now. Dropbox links can&rsquo;t be used &mdash; sync or upload the files.</p>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="r_platform">Platform</label>
-            <select name="platform" id="r_platform">
-              <option value="instagram">instagram</option>
-              <option value="tiktok">tiktok</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="r_campaign">Campaign</label>
-            <select name="campaign" id="r_campaign">
-              <option value="auto">Auto (asset&rsquo;s tag, else Lifestyle)</option>
-              {% for c in campaigns %}<option value="{{ c.slug }}">{{ c.name }}</option>{% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="r_count">How many drafts</label>
-            <select name="count" id="r_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
-          </div>
-          <div class="form-group">
-            <label for="r_media">Media type</label>
-            <select name="media_type" id="r_media">
-              <option value="">Images &amp; videos</option>
-              <option value="image">Images only</option>
-              <option value="video">Videos only</option>
-            </select>
-          </div>
+    <div class="seg" role="tablist" aria-label="How to generate">
+      <button type="button" role="tab" class="seg-btn" data-tab="random" aria-selected="{{ 'true' if start == 'random' else 'false' }}" onclick="showMode('random')">Surprise me</button>
+      <button type="button" role="tab" class="seg-btn" data-tab="pair" aria-selected="false" onclick="showMode('pair')">Instagram + TikTok pairs</button>
+      <button type="button" role="tab" class="seg-btn" data-tab="asset" aria-selected="{{ 'true' if start == 'asset' else 'false' }}" onclick="showMode('asset')">From one asset</button>
+    </div>
+
+    <form method="post" action="/generate/random" class="form-box" id="random-form" data-panel="random" role="tabpanel">
+      <p class="gen-intro">Picks random unused images or videos, writes a draft for each and saves them for review. One AI call per draft.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="r_platform">Platform</label>
+          <select name="platform" id="r_platform">
+            <option value="instagram">Instagram</option>
+            <option value="tiktok">TikTok</option>
+          </select>
         </div>
         <div class="form-group">
-          <label for="r_season">Seasonal context</label>
-          <input type="text" name="seasonal_context" id="r_season" maxlength="500" placeholder="e.g. Halloween week">
+          <label for="r_campaign">Campaign</label>
+          <select name="campaign" id="r_campaign">
+            <option value="auto">Auto (asset's tag, else Lifestyle)</option>
+            {% for c in campaigns %}<option value="{{ c.slug }}">{{ c.name }}</option>{% endfor %}
+          </select>
         </div>
-        <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include assets that already have a draft</span></label>
-        <input type="hidden" name="batch_key" value="{{ batch_key }}">
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary btn-md" id="random-btn">Pick random &amp; generate</button>
-          <span class="small">Each draft is one AI call.</span>
-        </div>
-      </form>
-
-      <form method="post" action="/generate/random" class="form-box" id="pair-form">
-        <h3>Instagram + TikTok pair</h3>
-        <p class="small">Same pattern as &ldquo;Surprise me&rdquo;, but each random <strong>video</strong> becomes a mirrored pair: an Instagram post and a TikTok, sharing a planning group. Images produce an Instagram draft only (TikTok inbox takes videos). Nothing is published.</p>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="p_count">How many videos</label>
-            <select name="count" id="p_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
-          </div>
-          <div class="form-group">
-            <label for="p_season">Seasonal context</label>
-            <input type="text" name="seasonal_context" id="p_season" maxlength="500" placeholder="e.g. Halloween week">
-          </div>
-        </div>
-        <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include assets that already have a draft</span></label>
-        <input type="hidden" name="platform" value="instagram">
-        <input type="hidden" name="media_type" value="video">
-        <input type="hidden" name="both_platforms" value="true">
-        <input type="hidden" name="batch_key" id="pair-batch-key" value="{{ batch_key }}">
-        <div class="form-actions">
-          <button type="submit" class="btn btn-ok btn-md" id="pair-btn">Create Instagram + TikTok pair</button>
-        </div>
-      </form>
-
-      <form method="post" action="/generate" class="form-box">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="profile_id">Profile</label>
-            <select name="profile_id" id="profile_id" required>
-              {% for p in profiles %}
-              <option value="{{ p.id }}">{{ p.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="campaign">Campaign</label>
-            <select name="campaign" id="campaign" required>
-              {% for c in campaigns %}
-              <option value="{{ c.slug }}" {% if c.slug == 'halloween' %}selected{% endif %}>{{ c.name }}</option>
-              {% endfor %}
-            </select>
-            <div class="field-hint">Halloween is preselected by default.</div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="platform">Platform</label>
-            <select name="platform" id="platform" required>
-              {% for p in platforms %}
-              <option value="{{ p }}">{{ p }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="content_type">Content type</label>
-            <select name="content_type" id="content_type" required>
-              {% for p, types in content_types.items() %}
-              <optgroup label="{{ p|title }}">
-                {% for t in types %}
-                <option value="{{ t }}" data-platform="{{ p }}">{{ t }}</option>
-                {% endfor %}
-              </optgroup>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-
+      </div>
+      <div class="form-row">
         <div class="form-group">
-          <label for="asset_id">Media asset</label>
-          <select name="asset_id" id="asset_id">
-            <option value="">None (text-first post)</option>
-            {% for a in assets %}
-            <option value="{{ a.id }}"
-              {% if selected_asset and selected_asset.id == a.id %}selected{% endif %}>
-              {{ a.filename }}{% if a.media_type == 'video' %} · video{% endif %}
-            </option>
+          <label for="r_count">How many drafts</label>
+          <select name="count" id="r_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+        </div>
+        <div class="form-group">
+          <label for="r_media">Media type</label>
+          <select name="media_type" id="r_media">
+            <option value="">Images and videos</option>
+            <option value="image">Images only</option>
+            <option value="video">Videos only</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="r_season">Seasonal context <span class="opt">optional</span></label>
+        <input type="text" name="seasonal_context" id="r_season" maxlength="500" placeholder="e.g. Halloween week">
+      </div>
+      <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include media that already has a draft</span></label>
+      <input type="hidden" name="batch_key" value="{{ batch_key }}">
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-md" id="random-btn">Pick random &amp; generate</button>
+      </div>
+    </form>
+
+    <form method="post" action="/generate/random" class="form-box" id="pair-form" data-panel="pair" role="tabpanel">
+      <p class="gen-intro">Each random video becomes an Instagram post and a TikTok that share a planning group. Images only get an Instagram draft, because TikTok takes videos.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="p_count">How many videos</label>
+          <select name="count" id="p_count">{% for n in range(1, 6) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}</select>
+        </div>
+        <div class="form-group">
+          <label for="p_season">Seasonal context <span class="opt">optional</span></label>
+          <input type="text" name="seasonal_context" id="p_season" maxlength="500" placeholder="e.g. Halloween week">
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" name="include_used" value="true"> <span>Include media that already has a draft</span></label>
+      <input type="hidden" name="platform" value="instagram">
+      <input type="hidden" name="media_type" value="video">
+      <input type="hidden" name="both_platforms" value="true">
+      <input type="hidden" name="batch_key" id="pair-batch-key" value="{{ batch_key }}">
+      <div class="form-actions">
+        <button type="submit" class="btn btn-ok btn-md" id="pair-btn">Create Instagram + TikTok pair</button>
+      </div>
+    </form>
+
+    <form method="post" action="/generate" class="form-box" data-panel="asset" role="tabpanel">
+      <p class="gen-intro">Choose the file and where it's going. The AI looks at uploaded images (and three frames of a video). Dropbox links can't be opened, so add a description instead.</p>
+
+      <div class="form-group">
+        <label for="asset_id">Media</label>
+        <select name="asset_id" id="asset_id">
+          <option value="">None (text-first post)</option>
+          {% for a in assets %}
+          <option value="{{ a.id }}" {% if selected_asset and selected_asset.id == a.id %}selected{% endif %}>
+            {{ a.filename }}{% if a.media_type == 'video' %} (video){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        {% if selected_asset %}
+        <div class="context-chip" style="margin-top:10px;">
+          <strong>Selected:</strong> {{ selected_asset.filename }}
+          {% if selected_asset.description %}<div class="small">{{ selected_asset.description }}</div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="platform">Platform</label>
+          <select name="platform" id="platform" required>
+            {% for p in platforms %}
+            <option value="{{ p }}">{{ p | plat }}</option>
             {% endfor %}
           </select>
-          <div class="field-hint">Uploaded images and videos are shown to the AI (videos: 3 frames). Dropbox links can't be opened by the AI &mdash; add a description instead.</div>
-          {% if selected_asset %}
-          <div class="context-chip" style="margin-top:10px;">
-            <strong>Selected:</strong> {{ selected_asset.filename }}
-            {% if selected_asset.description %}
-            <div class="small">{{ selected_asset.description }}</div>
-            {% endif %}
-          </div>
-          {% endif %}
         </div>
+        <div class="form-group">
+          <label for="content_type">Type of post</label>
+          <select name="content_type" id="content_type" required>
+            {% for p, types in content_types.items() %}
+            <optgroup label="{{ p | plat }}">
+              {% for t in types %}
+              <option value="{{ t }}" data-platform="{{ p }}">{{ t | ctype }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
 
+      <div class="form-row">
+        <div class="form-group">
+          <label for="campaign">Campaign</label>
+          <select name="campaign" id="campaign" required>
+            {% for c in campaigns %}
+            <option value="{{ c.slug }}" {% if c.slug == 'halloween' %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="profile_id">Writing as</label>
+          <select name="profile_id" id="profile_id" required>
+            {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <details class="more"{% if form_data %} open{% endif %}>
+        <summary>Fine-tune the wording <span class="opt">optional</span></summary>
         <div class="form-row">
           <div class="form-group">
             <label for="seasonal_context">Seasonal context</label>
@@ -163,70 +170,57 @@
               maxlength="500" placeholder="e.g. Halloween week">
           </div>
           <div class="form-group">
-            <label for="asset_context">Extra asset context</label>
+            <label for="asset_context">What's in the media</label>
             <input type="text" name="asset_context" id="asset_context"
               value="{{ form_data.asset_context if form_data else '' }}"
-              maxlength="1000" placeholder="Additional context about the media">
+              maxlength="1000" placeholder="Anything the AI can't see">
           </div>
         </div>
-
         <div class="form-row">
           <div class="form-group">
-            <label for="tone_variation">Tone variation</label>
+            <label for="tone_variation">Tone</label>
             <input type="text" name="tone_variation" id="tone_variation"
               value="{{ form_data.tone_variation if form_data else '' }}"
               maxlength="200" placeholder="e.g. more teasing">
           </div>
           <div class="form-group">
-            <label for="cta_request">CTA request</label>
+            <label for="cta_request">Call to action</label>
             <input type="text" name="cta_request" id="cta_request"
               value="{{ form_data.cta_request if form_data else '' }}"
-              maxlength="200" placeholder="Leave blank to let Claude decide">
+              maxlength="200" placeholder="Leave blank to let the AI decide">
           </div>
         </div>
-
         <div class="form-group">
-          <label for="extra_restrictions">Extra restrictions (one per line)</label>
+          <label for="extra_restrictions">Rules for this draft (one per line)</label>
           <textarea name="extra_restrictions" id="extra_restrictions" rows="3"
             placeholder="No emojis&#10;Keep under 100 characters">{{ form_data.extra_restrictions | join('\n') if form_data and form_data.extra_restrictions else '' }}</textarea>
         </div>
+      </details>
 
-        <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
 
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary btn-md" id="generate-btn">Generate Draft</button>
-          <span class="small">Creates a draft post with its first variant.</span>
-        </div>
-      </form>
-    </div>
-
-    <div class="generate-side">
-      <div class="sidebox">
-        <h3>Choosing a campaign</h3>
-        <p class="small">Campaigns are categories. They become the post's campaign tag and show up in the queue filter.</p>
-        <div class="chips">
-          {% for c in campaigns %}
-          <span class="chip chip-category">{{ c.name }}</span>
-          {% endfor %}
-        </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-md" id="generate-btn">Generate Draft</button>
       </div>
-
-      <div class="sidebox">
-        <h3>What gets generated</h3>
-        <p class="small" style="margin-bottom:0;">Claude returns a hook, caption, hashtags, call to action and reviewer notes — validated against the schema, then saved as a draft plus one variant.</p>
-      </div>
-
-      <div class="sidebox">
-        <h3>Reminder</h3>
-        <p class="small" style="margin-bottom:0;">Drafts are never published automatically. Approve, review, then post manually.</p>
-      </div>
-    </div>
+    </form>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// One form at a time. Without JS all three simply show.
+function showMode(m) {
+  document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== m; });
+  document.querySelectorAll('[data-tab]').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === m ? 'true' : 'false'));
+  const lib = document.querySelector('.gen-library'); if (lib) lib.hidden = m === 'asset';  // only about random drafts
+  try { history.replaceState(null, '', '#' + m); } catch (e) {}
+}
+(function () {
+  const wanted = location.hash.slice(1);
+  showMode(['random', 'pair', 'asset'].includes(wanted) ? wanted : '{{ start }}');
+})();
+
 const platformSelect = document.getElementById('platform');
 const contentTypeSelect = document.getElementById('content_type');
 
@@ -261,7 +255,7 @@ if (randomBtn) {
   // submit event (not click) so the browser still sends the form
   randomBtn.form.addEventListener('submit', function() {
     randomBtn.disabled = true;
-    randomBtn.textContent = 'Generating\u2026';
+    randomBtn.textContent = 'Generating…';
     setTimeout(() => { randomBtn.disabled = false; randomBtn.textContent = 'Pick random & generate'; }, 120000);
   });
 }
