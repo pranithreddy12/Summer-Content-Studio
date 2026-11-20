@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.config import get_settings
@@ -149,34 +149,40 @@ def create_app() -> FastAPI:
         """Apply basic auth (all routes except /health) and dashboard origin check."""
         # Skip auth for the health endpoint and the signed public media route (/m/{token}:
         # HMAC + expiry protect it; Instagram must be able to fetch it without credentials)
-        if request.url.path == "/health" or (request.url.path.startswith("/m/") and request.method in ("GET", "HEAD")):
+        # (and /login itself)
+        path = request.url.path
+        if request.method in ("GET", "HEAD") and (path in ("/health", "/login") or path.startswith(("/static/", "/m/"))):
             return await call_next(request)
 
-        # Basic auth when enabled (secrets.compare_digest, constant-time)
-        if settings.basic_auth_enabled:
+        # Auth when enabled: login-session cookie (browsers) or Basic header (scripts / API clients).
+        # POST /login does its own credential check but still goes through the origin check below.
+        if settings.basic_auth_enabled and path != "/login":
             import base64
-            import secrets as _secrets
 
+            from app.security import SESSION_COOKIE, auth_blocked, credentials_ok, record_failed_auth, session_cookie_valid
+
+            authorized = session_cookie_valid(request.cookies.get(SESSION_COOKIE))
             auth_header = request.headers.get("Authorization", "")
-            authorized = False
-            if auth_header.startswith("Basic "):
+            if not authorized and auth_header.startswith("Basic "):
+                if auth_blocked(request):  # password guessing through /api is throttled like the login form
+                    return JSONResponse(status_code=429, content={"error": {"code": "rate_limited", "message": "Too many failed attempts. Wait a minute."}})
                 try:
-                    decoded = base64.b64decode(auth_header[6:].strip()).decode("utf-8")
-                    username, _, password = decoded.partition(":")
-                    ok_user = _secrets.compare_digest(username, settings.DASHBOARD_USERNAME or "")
-                    ok_pass = _secrets.compare_digest(
-                        password,
-                        settings.DASHBOARD_PASSWORD.get_secret_value() if settings.DASHBOARD_PASSWORD else "",
-                    )
-                    authorized = ok_user and ok_pass
+                    username, _, password = base64.b64decode(auth_header[6:].strip()).decode("utf-8").partition(":")
+                    authorized = credentials_ok(username, password)
                 except Exception:
                     authorized = False
+                if not authorized:
+                    record_failed_auth(request)
             if not authorized:
+                if request.method == "GET" and not path.startswith("/api/") and "text/html" in request.headers.get("accept", ""):
+                    from urllib.parse import quote
+
+                    nxt = path + ("?" + request.url.query if request.url.query else "")
+                    return RedirectResponse(f"/login?next={quote(nxt, safe='')}", status_code=303)
+                # No WWW-Authenticate header: it would make browsers show the Basic popup again
                 return JSONResponse(
                     status_code=401,
                     content={"error": {"code": "unauthorized", "message": "Authentication required"}},
-                    # RFC 7617 requires a realm; some browsers show no login popup without one
-                    headers={"WWW-Authenticate": 'Basic realm="Summer Studio", charset="UTF-8"'},
                 )
 
         # CSRF mitigation: every unsafe request (dashboard AND /api) that carries an Origin/Referer
@@ -205,6 +211,8 @@ def create_app() -> FastAPI:
         response.headers.setdefault("X-Frame-Options", "DENY")          # no clickjacking of Approve / Publish
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
+        if "text/html" in response.headers.get("content-type", ""):
+            response.headers.setdefault("Cache-Control", "no-store")  # no logged-in pages from the back button after logout
 
         logger.info(
             "Request completed",

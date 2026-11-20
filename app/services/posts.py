@@ -271,7 +271,30 @@ def approve_post(db: Session, post_id: int) -> ContentPost:
 
     db.commit()
     db.refresh(post)
+    if post.status == PostStatus.approved.value and get_settings().AUTO_SCHEDULE_ON_APPROVE:
+        _schedule_now(db, post)
     return post
+
+
+def _schedule_now(db: Session, post: ContentPost) -> None:
+    """Approved with no time yet: give it the next free slot of its posting rule now, instead of at the next
+    daily planner run. Best effort: the approval stands even if planning fails or the rule has no free slot."""
+    import logging
+
+    from app.models import PostingRule
+    from app.services.planner import plan_week
+
+    rule = db.execute(select(PostingRule).where(
+        PostingRule.model_profile_id == post.model_profile_id, PostingRule.platform == post.platform,
+        PostingRule.is_active == True)).scalar_one_or_none()  # noqa: E712
+    if rule is None:
+        return
+    try:
+        plan_week(db, rule, utcnow())  # no AI client: it only places approved posts, never makes drafts
+        db.refresh(post)
+    except Exception:
+        db.rollback()
+        logging.getLogger("app.services.posts").exception("auto-schedule after approval failed", extra={"post_id": post.id})
 
 
 def reschedule_posts(db: Session, moves: dict[int, datetime]) -> list[ContentPost]:

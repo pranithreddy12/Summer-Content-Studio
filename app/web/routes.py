@@ -1524,3 +1524,38 @@ def fanvue_create_link(name: str = Form(""), platform: str = Form("instagram"), 
     except AppError as e:
         return redirect_with_flash("/fanvue", e.message, "error")
     return redirect_with_flash("/fanvue", f"Link '{link.name}' created.")
+
+
+# ---- Login / logout (the auth middleware lets /login through) ----
+
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/", error: int = 0):
+    from app.security import safe_next
+    return templates.TemplateResponse(request=request, name="login.html", context={"next": safe_next(next), "error": error})
+
+
+@router.post("/login")
+def login_submit(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("/")):
+    from urllib.parse import quote
+    from app.security import SESSION_COOKIE, SESSION_DAYS, auth_blocked, credentials_ok, make_session_cookie, record_failed_auth, safe_next
+    settings = get_settings()
+    if not settings.basic_auth_enabled:
+        return RedirectResponse("/", status_code=303)
+    nxt = safe_next(next)
+    if auth_blocked(request):  # 10 failed attempts/min/IP, shared with the Basic header
+        return RedirectResponse(f"/login?error=2&next={quote(nxt, safe='')}", status_code=303)
+    if not credentials_ok(username, password):
+        record_failed_auth(request)
+        return RedirectResponse(f"/login?error=1&next={quote(nxt, safe='')}", status_code=303)
+    resp = RedirectResponse(nxt, status_code=303)
+    resp.set_cookie(SESSION_COOKIE, make_session_cookie(), max_age=SESSION_DAYS * 86400, httponly=True,
+                    samesite="lax", secure=request.url.scheme == "https" or settings.APP_ENV == "production")
+    return resp
+
+
+@router.post("/logout")
+def logout():
+    from app.security import SESSION_COOKIE
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp

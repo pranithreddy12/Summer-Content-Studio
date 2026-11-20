@@ -3,6 +3,8 @@
 Dashboard auth + CSRF live in app/main.py middleware."""
 
 import hashlib
+import hmac
+import secrets
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -264,3 +266,62 @@ def get_or_create_tags(db, tag_names: list[str]) -> list:
             tags.append(tag)
 
     return tags
+
+
+# =========================================================================
+# Dashboard login session (signed cookie; Basic header still accepted for scripts)
+# =========================================================================
+
+SESSION_COOKIE = "summer_session"
+SESSION_DAYS = 30
+
+
+def _session_key() -> bytes:
+    s = get_settings()
+    # Derived from the credentials: changing the username or password logs everyone out.
+    return hashlib.sha256(f"session|{s.DASHBOARD_USERNAME}|{s.DASHBOARD_PASSWORD.get_secret_value()}".encode()).digest()
+
+
+def credentials_ok(username: str, password: str) -> bool:
+    s = get_settings()
+    return secrets.compare_digest(username.encode(), (s.DASHBOARD_USERNAME or "").encode()) & secrets.compare_digest(
+        password.encode(), s.DASHBOARD_PASSWORD.get_secret_value().encode()
+    )
+
+
+def make_session_cookie() -> str:
+    exp = str(int(time.time()) + SESSION_DAYS * 86400)
+    return f"{exp}.{hmac.new(_session_key(), exp.encode(), 'sha256').hexdigest()}"
+
+
+def session_cookie_valid(value: str | None) -> bool:
+    exp, _, sig = (value or "").partition(".")
+    if not exp.isdigit() or int(exp) < time.time():
+        return False
+    return secrets.compare_digest(sig, hmac.new(_session_key(), exp.encode(), "sha256").hexdigest())
+
+
+def safe_next(target: str | None) -> str:
+    """Only same-site paths; blocks open redirects like //evil.com, /\\evil.com and control chars (browsers drop tabs/newlines)."""
+    t = target or "/"
+    ok = t.startswith("/") and not t.startswith("//") and "\\" not in t and t.isprintable() and len(t) <= 500
+    return t if ok else "/"
+
+
+# Failed-credential throttle shared by the login form and the Basic header (successes do not count).
+_failed_auth: dict[str, list[float]] = defaultdict(list)
+MAX_FAILED_AUTH = 10  # per client IP per minute
+
+
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def auth_blocked(request: Request) -> bool:
+    now = time.time()
+    hits = _failed_auth[_ip(request)] = [t for t in _failed_auth[_ip(request)] if t > now - 60]
+    return len(hits) >= MAX_FAILED_AUTH
+
+
+def record_failed_auth(request: Request) -> None:
+    _failed_auth[_ip(request)].append(time.time())

@@ -173,7 +173,19 @@ def test_basic_auth_required(client, monkeypatch):
         # No credentials → 401 on everything except /health
         assert fresh.get("/health").status_code == 200
         assert fresh.get("/api/v1/profiles").status_code == 401
-        assert fresh.get("/").status_code == 401
+        r = fresh.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/login")
+        assert "www-authenticate" not in fresh.get("/api/v1/profiles").headers
+
+        # Login page: wrong password -> back to form; right password -> cookie session works
+        assert fresh.get("/login").status_code == 200
+        bad = fresh.post("/login", data={"username": "admin", "password": "x"}, follow_redirects=False)
+        assert "error=1" in bad.headers["location"] and "summer_session" not in bad.cookies
+        ok = fresh.post("/login", data={"username": "admin", "password": "s3cret", "next": "//evil.com"}, follow_redirects=False)
+        assert ok.status_code == 303 and ok.headers["location"] == "/"
+        assert fresh.get("/api/v1/profiles").status_code == 200       # cookie carries the session
+        fresh.cookies.clear()
+        assert fresh.get("/api/v1/profiles").status_code == 401
 
         # Wrong credentials → 401
         assert fresh.get("/api/v1/profiles", headers=_auth_header("admin", "wrong")).status_code == 401
@@ -181,16 +193,40 @@ def test_basic_auth_required(client, monkeypatch):
         # Right credentials → 200
         assert fresh.get("/api/v1/profiles", headers=_auth_header("admin", "s3cret")).status_code == 200
         assert fresh.get("/", headers=_auth_header("admin", "s3cret")).status_code == 200
+
+        # A cross-origin login POST is rejected like every other unsafe request
+        assert fresh.post("/login", data={"username": "admin", "password": "s3cret"}, headers={"Origin": "http://evil.com"}).status_code == 403
+        # Pages are never cached (back button after logout)
+        assert fresh.get("/login").headers["cache-control"] == "no-store"
+
+        # Password guessing is throttled on BOTH the form and the Basic header; successes don't count
+        for _ in range(10):
+            fresh.get("/api/v1/profiles", headers=_auth_header("admin", "nope"))
+        assert fresh.get("/api/v1/profiles", headers=_auth_header("admin", "nope")).status_code == 429
+        assert fresh.get("/api/v1/profiles", headers=_auth_header("admin", "s3cret")).status_code == 429  # even the right one waits
+        blocked = fresh.post("/login", data={"username": "admin", "password": "s3cret"}, follow_redirects=False)
+        assert "error=2" in blocked.headers["location"] and "summer_session" not in blocked.cookies
     finally:
+        from app.security import _failed_auth
+        _failed_auth.clear()
         db_module._engine = None
         db_module._SessionLocal = None
         engine.dispose()
         clear_settings_cache()
 
 
+def test_safe_next_only_allows_plain_local_paths():
+    from app.security import safe_next
+    assert safe_next("/posts?x=1") == "/posts?x=1"
+    for bad in ("//evil.com", "/\\evil.com", "https://evil.com", "javascript:alert(1)", "/\t/evil.com", "/a\r\nb", "", None, "/" + "a" * 600):
+        assert safe_next(bad) == "/"
+
+
 # =========================================================================
 # Origin / CSRF
-# =========================================================================def test_cross_origin_dashboard_post_403(client):
+# =========================================================================
+
+def test_cross_origin_dashboard_post_403(client):
     """Dashboard POST with foreign Origin header → 403."""
     resp = client.post("/posts/1/approve", headers={"Origin": "https://evil.example"}, follow_redirects=True)
     assert resp.status_code == 403

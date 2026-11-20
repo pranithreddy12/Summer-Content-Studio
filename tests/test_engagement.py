@@ -358,7 +358,9 @@ def test_api_comment_flow(api):
 
 
 def test_api_metrics_and_sync(api):
-    pid = published_post(api.client)
+    from app.db import utcnow
+    # the API uses the real clock and only tracks posts from the last RECENT_DAYS: a fixed 2 Nov date went stale
+    pid = published_post(api.client, published_at=utcnow() - timedelta(hours=1))
     assert api.client.get(f"/api/v1/posts/{pid}/metrics").json() == {"latest": None, "history": []}
     assert api.client.get("/api/v1/posts/999/metrics").status_code == 404
     api.ig.comments = [c(1)]

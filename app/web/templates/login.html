@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Sign in · Summer Content Studio</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Login only. Tokens (--bg, --accent, --serif …) come from style.css. */
+        .gate {
+            position: relative; isolation: isolate; overflow: hidden;
+            min-height: 100vh; min-height: 100dvh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 24px;
+            background: var(--bg);
+        }
+        /* A low sun sitting on the bottom edge: the one moment of motion, it rises once on load. */
+        .gate::before {
+            content: ""; position: absolute; z-index: -1;
+            left: 50%; bottom: 0; width: 90vmax; height: 45vmax;
+            transform: translate(-50%, 62%);
+            background: radial-gradient(closest-side, rgba(229,160,74,.34), rgba(201,116,58,.14) 45%, transparent 70%);
+            animation: rise 1.6s cubic-bezier(.2,.7,.2,1) both;
+        }
+        @keyframes rise { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 62%); opacity: 1; } }
+
+        .gate-card { width: 100%; max-width: 340px; }
+        .brandline { margin-bottom: 20px;
+            display: flex; align-items: center; gap: 10px; color: var(--text-2); text-decoration: none; font-size: .9rem; }
+        .brandline .brand-mark { width: 28px; height: 28px; font-size: .9rem; }
+
+        .intro h1 {
+            font-family: var(--serif); font-weight: 400; letter-spacing: -.02em; line-height: .98;
+            font-size: 2rem; color: var(--text);
+        }
+        .intro p { margin: 8px 0 18px; color: var(--muted); font-size: .85rem; line-height: 1.45; }
+
+        /* Viewfinder: four corner brackets frame the form, like cropping a shot. */
+        .frame {
+            --b: var(--accent); --l: 22px; --t: 2px;
+            position: relative; width: 100%;
+            padding: 24px 22px 22px;
+            background:
+                linear-gradient(var(--b), var(--b)) top left / var(--l) var(--t),
+                linear-gradient(var(--b), var(--b)) top left / var(--t) var(--l),
+                linear-gradient(var(--b), var(--b)) top right / var(--l) var(--t),
+                linear-gradient(var(--b), var(--b)) top right / var(--t) var(--l),
+                linear-gradient(var(--b), var(--b)) bottom left / var(--l) var(--t),
+                linear-gradient(var(--b), var(--b)) bottom left / var(--t) var(--l),
+                linear-gradient(var(--b), var(--b)) bottom right / var(--l) var(--t),
+                linear-gradient(var(--b), var(--b)) bottom right / var(--t) var(--l),
+                rgba(21,20,15,.72);
+            background-repeat: no-repeat;
+            backdrop-filter: blur(6px);
+        }
+        .frame label { display: block; margin-bottom: 14px; color: var(--text-2); font-size: .8rem; }
+        .field { display: block; position: relative; margin-top: 5px; }
+        .frame input {
+            width: 100%; height: 36px; padding: 0 11px 0 34px; font: inherit; font-size: .875rem; color: var(--text);
+            background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 8px;
+        }
+        .frame input::placeholder { color: var(--faint); }
+        .ico { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); pointer-events: none; transition: color .15s; }
+        .field:focus-within .ico { color: var(--accent); }
+        .frame input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+        .field input[type=password], .field input.shown { padding-right: 52px; }
+        .peek {
+            position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+            padding: 3px 8px; background: none; border: 0; border-radius: 6px;
+            color: var(--muted); font: inherit; font-size: .75rem; cursor: pointer;
+        }
+        .peek:hover { color: var(--text); }
+        .peek:focus-visible { outline: none; box-shadow: var(--ring); }
+        .go {
+            width: 100%; height: 36px; margin-top: 4px; font: inherit; font-size: .875rem; font-weight: 600; cursor: pointer;
+            color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 8px;
+            transition: background .15s;
+        }
+        .go:hover { background: var(--accent-strong); }
+        .go:focus-visible { outline: none; box-shadow: var(--ring); }
+        .err {
+            margin-bottom: 14px; padding: 9px 11px; font-size: .8rem; line-height: 1.4;
+            color: var(--danger); background: rgba(236,137,126,.08); border: 1px solid rgba(236,137,126,.3); border-radius: var(--radius-sm);
+        }
+
+        @media (max-width: 820px) {
+            .intro h1 { font-size: 1.8rem; }
+            .frame { padding: 22px 18px 20px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .gate::before { animation: none; transform: translate(-50%, 62%); }
+            .go { transition: none; }
+        }
+    </style>
+</head>
+<body>
+<main class="gate">
+<div class="gate-card">
+    <a class="brandline" href="/login" aria-label="Summer Content Studio">
+        <span class="brand-mark" aria-hidden="true">S</span>Summer Content Studio
+    </a>
+
+    <section class="intro">
+        <h1 id="greeting">Welcome back.</h1>
+        <p>Sign in to plan, approve and schedule Summer's posts.</p>
+    </section>
+
+    <form class="frame" method="post" action="/login" aria-labelledby="greeting">
+        {% if error == 1 %}<p class="err" role="alert">That username and password don't match. Check them and try again.</p>{% elif error == 2 %}<p class="err" role="alert">Too many failed attempts. Wait a minute, then try again.</p>{% endif %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <label>Username
+            <span class="field"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14c.5-2.6 2.6-4 5.25-4s4.75 1.4 5.25 4"/></svg><input name="username" placeholder="Your username" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required></span>
+        </label>
+        <label>Password
+            <span class="field">
+                <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.75"/><path d="M5.25 7V5.25a2.75 2.75 0 0 1 5.5 0V7"/></svg>
+                <input id="pw" name="password" placeholder="Your password" type="password" autocomplete="current-password" required>
+                <button class="peek" type="button" aria-controls="pw" aria-pressed="false">Show</button>
+            </span>
+        </label>
+        <button class="go" type="submit">Sign in</button>
+    </form>
+</div>
+</main>
+<script>
+    // Time-of-day greeting; the server-rendered "Welcome back." stays if JS is off.
+    var h = new Date().getHours();
+    document.getElementById("greeting").textContent =
+        (h < 5 ? "Still up?" : h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.");
+    var pw = document.getElementById("pw"), peek = document.querySelector(".peek");
+    peek.addEventListener("click", function () {
+        var show = pw.type === "password";
+        pw.type = show ? "text" : "password";
+        pw.classList.toggle("shown", show);
+        peek.textContent = show ? "Hide" : "Show";
+        peek.setAttribute("aria-pressed", show);
+    });
+</script>
+</body>
+</html>

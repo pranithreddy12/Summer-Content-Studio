@@ -380,3 +380,16 @@ def test_api_plan_and_week(app, client, rule_row):
     assert week["start_day"] == "2027-03-01"
     assert len(week["items"]) == 10
     assert all(it["planned_by"] == "planner" for it in week["items"])
+
+
+def test_approving_schedules_the_post_by_itself(env, app, rule_row):
+    """AUTO_SCHEDULE_ON_APPROVE: approve -> a slot inside the window at once (no wait for tomorrow's planner)."""
+    from app.db import utcnow
+    from app.services.posts import get_post
+
+    env(AUTO_SCHEDULE_ON_APPROVE="true")
+    post = get_post(db_session(), make_approved())
+    assert post.status == "scheduled" and post.planned_by == "planner"
+    assert post.planned_publish_at > utcnow() and in_window(rule_row, post.planned_publish_at)
+    env(AUTO_SCHEDULE_ON_APPROVE="false")
+    assert get_post(db_session(), make_approved(i=1)).status == "approved"  # default: unchanged
