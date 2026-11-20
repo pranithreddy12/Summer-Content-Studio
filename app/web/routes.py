@@ -955,7 +955,16 @@ async def planner_page(
                 ).order_by(ContentPost.planned_publish_at)
             ).scalars().all()
             days.append({"date": d, "posts": posts})
-        weeks[rule.platform] = {"rule": rule, "days": days, "tz": rule.timezone}
+        waiting = db.execute(
+            select(func.count(ContentPost.id)).where(
+                ContentPost.model_profile_id == rule.model_profile_id,
+                ContentPost.platform == rule.platform,
+                ContentPost.status == PostStatus.approved.value,
+                ContentPost.planned_publish_at.is_(None),
+            )
+        ).scalar() or 0  # approved posts the planner can still give a time
+        weeks[rule.platform] = {"rule": rule, "days": days, "tz": rule.timezone, "waiting": waiting,
+                                "planned": sum(len(d["posts"]) for d in days)}
 
     return _template_response("planner.html", {
         "request": request,

@@ -5,6 +5,7 @@ platform is `{PUBLIC_BASE_URL}/oauth/{platform}/callback`. They are browser rout
 Basic auth still applies, and they only ever redirect to fixed dashboard paths.
 """
 
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
@@ -42,7 +43,7 @@ def oauth_start(platform: str, profile_id: int = Query(...), db: Session = Depen
 
 
 @oauth_router.get("/{platform}/callback")
-def oauth_callback(platform: str, code: str = "", state: str = "", error: str = "",
+def oauth_callback(platform: str, code: str = "", state: str = "", error: str = "", error_description: str = "",
                    db: Session = Depends(get_db), http=Depends(get_platform_http)):
     if platform not in svc.PLATFORMS:
         raise AppError("not_found", "Unknown platform.", status=404)
@@ -52,7 +53,13 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
         if row is not None:
             db.delete(row)
             db.commit()
-        return _back("Connection was cancelled or refused by the platform.", "error")
+        # RFC 6749 error codes only (a fixed set, so nothing from the query string is echoed)
+        known = {"access_denied", "invalid_scope", "invalid_request", "unauthorized_client",
+                 "unsupported_response_type", "server_error", "temporarily_unavailable"}
+        logging.getLogger(__name__).warning("oauth %s callback error=%r description=%r",
+                                            platform, error[:60], error_description[:200])
+        detail = f" ({error})" if error in known else ""
+        return _back(f"Connection was cancelled or refused by the platform{detail}.", "error")
     try:
         account = svc.complete_oauth(db, platform, code, state, http)
     except AppError as e:

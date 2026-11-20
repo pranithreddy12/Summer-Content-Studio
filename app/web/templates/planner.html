@@ -4,99 +4,103 @@
 <div class="page">
   <header class="page-head">
     <div>
-      <span class="eyebrow">Weekly planner</span>
       <h1>Plan posts</h1>
-      <p class="page-lede">Random times inside each platform's posting window (default 08:00–21:00 local).
-      Pick a start date and how many days (1 to 7). The planner schedules <strong>approved</strong> posts only — it never approves anything.</p>
-    </div>
-    <div class="page-actions">
-      {% for platform, week in rule_weeks.items() %}
-      <form method="post" action="/planner/plan" class="inline-form">
-        <input type="hidden" name="platform" value="{{ platform }}">
-        <label class="small">Start <input type="date" name="start_day" value="{{ default_start }}"></label>
-        <label class="small">Days
-          <select name="days">
-            {% for n in range(1, 8) %}<option value="{{ n }}" {% if n == 7 %}selected{% endif %}>{{ n }}</option>{% endfor %}
-          </select>
-        </label>
-        <button type="submit" class="btn btn-primary" id="plan-{{ platform }}-btn">Plan {{ platform }}</button>
-      </form>
-      {% endfor %}
+      <p class="page-lede">Gives approved posts a random time inside each platform's posting window. It never approves anything.</p>
     </div>
   </header>
-  {% include "_flash.html" %}
 
   {% if not rule_weeks %}
-  <div class="banner banner-info"><p>No posting rules yet — activate one below.</p></div>
+  <div class="banner banner-info"><p>No posting rules yet. Add one from the API or ask your developer to seed the defaults.</p></div>
   {% endif %}
 
   {% for platform, week in rule_weeks.items() %}
   {% set rule = week.rule %}
-  <section class="section">
-    <h2>{{ platform }} <small class="small">({{ rule.timezone }})</small></h2>
-    <div class="two-col">
-      <form method="post" action="/planner/rules/{{ rule.id }}" class="form-box">
-        <div class="form-row">
+  <section class="pl">
+    <div class="pl-head">
+      <h2>{{ platform | plat }}</h2>
+      <span class="small">{{ rule.timezone }}</span>
+      {% if rule.is_active %}<span class="badge badge-approved">Rule on</span>{% else %}<span class="badge badge-archived">Rule paused</span>{% endif %}
+    </div>
+
+    <form method="post" action="/planner/plan" class="pl-plan">
+      <input type="hidden" name="platform" value="{{ platform }}">
+      <p class="pl-waiting">
+        {% if week.waiting %}<strong>{{ week.waiting }}</strong> approved {{ 'post is' if week.waiting == 1 else 'posts are' }} waiting for a time.
+        {% else %}No approved posts are waiting. <a href="/posts?status_filter=draft">Approve some drafts</a> first.{% endif %}
+      </p>
+      <div class="pl-controls">
+        <label>Start <input type="date" name="start_day" value="{{ default_start }}"></label>
+        <label>Days
+          <select name="days">
+            {% for n in range(1, 8) %}<option value="{{ n }}" {% if n == 7 %}selected{% endif %}>{{ n }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary" id="plan-{{ platform }}-btn">Plan {{ platform | plat }}</button>
+      </div>
+    </form>
+
+    <div class="pl-weekhead">
+      <span><strong>{{ week.planned }}</strong> planned in the next 7 days, target {{ rule.posts_per_week }} a week</span>
+      <span class="pl-legend"><span class="slot slot-scheduled">Scheduled</span><span class="slot slot-published">Published</span><span class="slot slot-user">Set by hand</span></span>
+    </div>
+    <div class="wk">
+      {% for day in week.days %}
+      <div class="wk-day{% if loop.first %} wk-today{% endif %}">
+        <div class="wk-head"><span>{{ day.date.strftime('%a') }}</span>{{ day.date.strftime('%d %b') }}</div>
+        {% for post in day.posts %}
+        <a class="slot slot-{{ post.status }}{% if not post.planned_by or post.planned_by != 'planner' %} slot-user{% endif %}"
+           href="/posts/{{ post.id }}" title="{{ post.status }} ({{ post.planned_by or 'by hand' }})">
+          {{ (post.planned_publish_at | local(rule.timezone)).strftime('%H:%M') }} <span class="cal-num">#{{ post.id }}</span>
+        </a>
+        {% endfor %}
+        {% if not day.posts %}<span class="wk-none" title="No planned posts for this day">Nothing planned</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if platform == 'tiktok' %}
+    <p class="pl-note">The planned time for TikTok is when the video lands in your TikTok drafts. You publish it in the TikTok app.</p>
+    {% endif %}
+
+    <details class="more rule"{% if not rule.is_active %} open{% endif %}>
+      <summary>Posting rule
+        <span class="opt">{{ rule.posts_per_week }} a week, {{ rule.min_per_day }} to {{ rule.max_per_day }} a day, {{ rule.window_start }} to {{ rule.window_end }}, {{ rule.min_gap_minutes }} min apart</span>
+      </summary>
+      <form method="post" action="/planner/rules/{{ rule.id }}">
+        <div class="rule-grid">
           <div class="form-group">
             <label for="pw-{{ rule.id }}">Posts per week</label>
             <input type="number" name="posts_per_week" id="pw-{{ rule.id }}" value="{{ rule.posts_per_week }}" min="1" max="168">
           </div>
           <div class="form-group">
-            <label for="mind-{{ rule.id }}">Min per day</label>
+            <label for="mind-{{ rule.id }}">Fewest per day</label>
             <input type="number" name="min_per_day" id="mind-{{ rule.id }}" value="{{ rule.min_per_day }}" min="0" max="24">
           </div>
           <div class="form-group">
-            <label for="maxd-{{ rule.id }}">Max per day</label>
+            <label for="maxd-{{ rule.id }}">Most per day</label>
             <input type="number" name="max_per_day" id="maxd-{{ rule.id }}" value="{{ rule.max_per_day }}" min="1" max="24">
           </div>
-        </div>
-        <div class="form-row">
           <div class="form-group">
-            <label for="ws-{{ rule.id }}">Window start (HH:MM)</label>
+            <label for="ws-{{ rule.id }}">Window opens</label>
             <input type="text" name="window_start" id="ws-{{ rule.id }}" value="{{ rule.window_start }}" placeholder="08:00">
           </div>
           <div class="form-group">
-            <label for="we-{{ rule.id }}">Window end (HH:MM)</label>
+            <label for="we-{{ rule.id }}">Window closes</label>
             <input type="text" name="window_end" id="we-{{ rule.id }}" value="{{ rule.window_end }}" placeholder="21:00">
           </div>
           <div class="form-group">
-            <label for="gap-{{ rule.id }}">Min gap (minutes)</label>
+            <label for="gap-{{ rule.id }}">Gap between posts (min)</label>
             <input type="number" name="min_gap_minutes" id="gap-{{ rule.id }}" value="{{ rule.min_gap_minutes }}" min="0">
           </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="tz-{{ rule.id }}">Timezone (IANA)</label>
-            <input type="text" name="timezone" id="tz-{{ rule.id }}" value="{{ rule.timezone }}">
-          </div>
-          <div class="form-group checkbox-group">
-            <label><input type="checkbox" name="is_active" {% if rule.is_active %}checked{% endif %}> Rule active</label>
-            <label><input type="checkbox" name="auto_topup" {% if rule.auto_topup %}checked{% endif %}> AI draft top-up for empty slots</label>
+          <div class="form-group rule-wide">
+            <label for="tz-{{ rule.id }}">Timezone</label>
+            <input type="text" name="timezone" id="tz-{{ rule.id }}" value="{{ rule.timezone }}" placeholder="Europe/London">
           </div>
         </div>
+        <label class="check"><input type="checkbox" name="is_active" {% if rule.is_active %}checked{% endif %}> <span>Rule on (planning is blocked while it is off)</span></label>
+        <label class="check"><input type="checkbox" name="auto_topup" {% if rule.auto_topup %}checked{% endif %}> <span>Write AI drafts for slots with no approved post</span></label>
         <div class="form-actions"><button type="submit" class="btn">Save rule</button></div>
       </form>
-
-      <div class="week-grid">
-        {% for day in week.days %}
-        <div class="week-day">
-          <div class="week-day-head">{{ day.date.strftime('%a %d %b') }}</div>
-          {% for post in day.posts %}
-          <a class="slot slot-{{ post.status }}{% if not post.planned_by or post.planned_by != 'planner' %} slot-user{% endif %}"
-             href="/posts/{{ post.id }}" title="{{ post.status }} ({{ post.planned_by or 'user' }})">
-            {{ (post.planned_publish_at | local(rule.timezone)).strftime('%H:%M') }} <span class="cal-num">#{{ post.id }}</span>
-          </a>
-          {% endfor %}
-          {% if not day.posts %}
-          <span class="slot slot-empty" title="No planned posts for this day">empty</span>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% if platform == 'tiktok' %}
-    <p class="small banner banner-info">Note: the planned time for TikTok is when the video is delivered to your drafts — you publish it in the TikTok app.</p>
-    {% endif %}
+    </details>
   </section>
   {% endfor %}
 </div>

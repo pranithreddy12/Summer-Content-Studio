@@ -1227,3 +1227,37 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .more > summary { cursor: pointer; color: var(--text-2); font-size: 0.9rem; font-weight: 600; margin-bottom: 14px; }
 .more:not([open]) > summary { margin-bottom: 0; }
 .form-box[hidden] { display: none; }
+
+/* ============================================================
+   Planner: per platform plan bar, 7-day strip, rule fold-out
+   ============================================================ */
+.pl { margin: 0 0 40px; max-width: 980px; }
+.pl-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.pl-head h2 { margin: 0; }
+.pl-plan { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 14px 18px; margin-bottom: 18px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); }
+.pl-waiting { margin: 0; font-size: 0.92rem; color: var(--text-2); }
+.pl-waiting strong { color: var(--text); }
+.pl-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.pl-controls label { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+.pl-controls input[type="date"], .pl-controls select { width: auto; min-width: 72px; padding: 7px 10px; }
+.pl-weekhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; font-size: 0.88rem; color: var(--muted); }
+.pl-weekhead strong { color: var(--text); }
+.pl-legend { display: flex; gap: 6px; }
+.pl-legend .slot { margin: 0; font-size: 0.72rem; padding: 2px 8px; }
+.wk { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.wk-day { padding: 10px; min-height: 96px; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.wk-today { border-color: var(--accent-line); }
+.wk-head { margin-bottom: 8px; font-size: 0.85rem; color: var(--text); font-weight: 600; }
+.wk-head span { margin-right: 6px; color: var(--muted); font-weight: 500; }
+.wk-day .slot { display: flex; justify-content: space-between; margin: 0 0 4px; }
+.wk-none { font-size: 0.78rem; color: var(--faint); }
+.pl-note { margin: 12px 0 0; font-size: 0.82rem; color: var(--muted); }
+.rule { margin-top: 18px; }
+.rule > summary .opt { display: inline; margin-left: 10px; }
+.rule-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; max-width: 640px; }
+.rule-wide { grid-column: span 3; }
+@media (max-width: 700px) {
+  .rule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rule-wide { grid-column: span 2; }
+  .rule > summary .opt { display: block; margin: 4px 0 0; }
+}
