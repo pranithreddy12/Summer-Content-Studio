@@ -59,14 +59,24 @@ def _app_timezone() -> str:
         return "UTC"
 
 
+def is_quiet_day(day) -> bool:
+    """Settings page 'No posting on': is this local date (or datetime) a day nothing may go out?"""
+    from app.config import get_settings
+
+    return get_settings().quiet_weekday(day.weekday())
+
+
 def in_window(rule, now_utc: datetime) -> bool:
     """Is `now_utc` (aware) inside the rule's posting window?
 
     start <= local time <= end (end inclusive: 21:00:00.000000 allowed,
     anything after 21:00:00 is out).
 
-    enforce_window=False -> always True.
+    enforce_window=False -> always True (except on a quiet day, Settings page).
     """
+    quiet_tz = ZoneInfo(getattr(rule, "timezone", None) or _app_timezone())
+    if is_quiet_day(now_utc.astimezone(quiet_tz)):
+        return False
     if getattr(rule, "enforce_window", True) is False:
         return True
     window = build_window(rule)

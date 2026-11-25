@@ -351,3 +351,14 @@ Report: `docs/AUDIT_PHASE3_2026-11-10.md`. Two Fanvue reply race conditions fixe
 - **Tests:** `tests/test_settings_page.py` (+15): page renders, saved value overrides `.env`, reset, unticked checkbox = off, bad values / live without prerequisites / unknown platform change nothing, secrets cannot be set, a switched-off platform stops its posts and reminders, another process sees a change. Full suite **742 passed, 0 failed**.
 - **Not covered:** a real browser pass of the new page; the server needs `git pull`, `alembic upgrade head` (or the app's normal migration step), and a restart of both services.
 - **Added the same day:** Settings options `AUTO_APPROVE_PLATFORMS` (fully automatic: the planner's AI drafts for a ticked platform are approved and scheduled with no human; default none, confirm dialog), `NOTIFY_NEW_DRAFTS`, `NOTIFY_PUBLISHED`; relabelled the drafts-per-day option. Tests `test_fully_automatic_platform_approves_and_schedules_new_drafts`, `test_draft_and_published_pushes_can_be_switched_off` (14 in `tests/test_settings_page.py`).
+
+## 2026-11-26 - Settings round 2: change log, approve-after-hours, quiet days + daily cap, pause button
+- **Files:** `app/models.py` (`SettingChange`), migration `c4d6e8f0a2b3_0006_setting_changes.py`, `app/services/app_settings.py` (log, pause, resume), `app/settings_spec.py` + `app/config.py` + `.env.example` (`AUTO_APPROVE_AFTER_HOURS`, `NO_POST_WEEKDAYS`, `MAX_POSTS_PER_DAY`), `app/services/window.py` (`is_quiet_day`, `in_window`), `app/services/planner.py` (`approve_stale_drafts`, no slots on quiet days), `app/services/scheduler.py` (daily cap, `approve_stale` stage), routes `/settings/pause` and `/settings/resume`, sidebar button, Recent changes list.
+- **Tests:** +5 in `tests/test_settings_page.py` (log shown, pause/resume restores the mode, quiet day outside the window and no slots, daily cap delays extras, unanswered drafts approved after N hours).
+- **Server:** needs `alembic upgrade head` (migration 0006) and a restart of both services.
+
+## 2026-11-26 - Settings round 3: draft-writing options
+- **Files:** `app/settings_spec.py` ("Draft writing" group), `app/config.py` + `.env.example` (`AUTO_DRAFT_MEDIA`, `AUTO_DRAFT_INCLUDE_USED`, `AUTO_DRAFT_BOTH_PLATFORMS`), `app/api/dependencies.py` (LLM client rebuilt on provider/model/effort change), `app/services/planner.py` (top-up request honours the options), `app/services/app_settings.py` (a server-set choice outside the list is kept).
+- **Tests:** +3 in `tests/test_settings_page.py` (client follows the chosen model, a custom server model survives a save, automatic drafts use the media options). No new migration.
+- **Server:** `git pull` and restart both services (no migration this time).
+

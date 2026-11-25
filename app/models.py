@@ -465,6 +465,18 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class SettingChange(Base):
+    """History of Settings page changes (what, from, to, when)."""
+
+    __tablename__ = "setting_changes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    old: Mapped[str] = mapped_column(String(200), nullable=False)
+    new: Mapped[str] = mapped_column(String(200), nullable=False)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, nullable=False, index=True)
+
+
 class NotificationLog(Base):
     """Delivery log only: no message bodies with secrets (PLAN §6)."""
 

@@ -46,6 +46,14 @@
       </div>
     </section>
     {% endfor %}
+    <section class="section">
+      <div class="section-head"><h2>Recent changes</h2></div>
+      <div class="card" style="padding:16px;">
+        {% if changes %}<ul class="small" style="margin:0;padding-left:18px;">
+          {% for c in changes %}<li><strong>{{ c.key }}</strong>: {{ c.old }} &rarr; {{ c.new }} <span class="small">· {{ c.at|when }}</span></li>{% endfor %}
+        </ul>{% else %}<p class="small" style="margin:0;">Nothing changed here yet.</p>{% endif %}
+      </div>
+    </section>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save settings</button>
       <button type="submit" formaction="/settings/reset" class="btn" formnovalidate onclick="return confirm('Go back to the server (.env) values for every setting?')">Reset everything</button>

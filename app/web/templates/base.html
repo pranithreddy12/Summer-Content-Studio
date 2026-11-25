@@ -80,6 +80,8 @@
                     {% else %}<strong>Manual</strong><span>Drafts only. Nothing is published.</span>{% endif %}
                 </div>
             </div>
+            {% if counts.paused %}<form method="post" action="/settings/resume" class="logout"><button type="submit" class="linkbtn">Posting is paused - Resume</button></form>
+            {% elif m != 'off' %}<form method="post" action="/settings/pause" class="logout" onsubmit="return confirm('Pause all posting now? Nothing will be published or reminded until you resume.')"><button type="submit" class="linkbtn">Pause posting</button></form>{% endif %}
             {% if settings.basic_auth_enabled %}<form method="post" action="/logout" class="logout"><button type="submit" class="linkbtn">Log out</button></form>{% endif %}
         </div>
     </aside>

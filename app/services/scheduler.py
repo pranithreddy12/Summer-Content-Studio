@@ -26,6 +26,7 @@ from app.db import utcnow
 from app.models import ContentPost, PostStatus, PostingRule, WorkerHeartbeat
 from app.services import dropbox_link
 from app.services.notifications import poll_telegram
+from app.services.planner import approve_stale_drafts
 
 logger = logging.getLogger("app.services.scheduler")
 
@@ -71,6 +72,22 @@ def worker_status(db) -> tuple[str | None, bool]:
 
 # ---- selection -------------------------------------------------------------
 
+def _daily_room(db, now: datetime) -> int | None:
+    """Settings 'Most posts per day': how many more automatic posts / reminders may go out today (None = no cap).
+    Counts what already went out or was reminded since local midnight (APP_TIMEZONE)."""
+    from sqlalchemy import func, or_
+
+    cap = get_settings().MAX_POSTS_PER_DAY
+    if cap <= 0:
+        return None
+    start = now.astimezone(ZoneInfo(get_settings().APP_TIMEZONE)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start, end = start.astimezone(now.tzinfo), (start + timedelta(days=1)).astimezone(now.tzinfo)
+    used = db.scalar(select(func.count()).select_from(ContentPost).where(or_(
+        (ContentPost.published_at >= start) & (ContentPost.published_at < end),
+        (ContentPost.reminded_at >= start) & (ContentPost.reminded_at < end)))) or 0
+    return max(0, cap - used)
+
+
 def due_reminder_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
     """Scheduled posts whose slot is reached and not reminded yet, inside each
     post's posting window (hard rule §1 rule 11)."""
@@ -90,7 +107,9 @@ def due_reminder_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
         .limit(limit)
     ).scalars().all()
     enabled = get_settings().platform_enabled
-    return [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    room = _daily_room(db, now)
+    return ok if room is None else ok[:room]
 
 
 def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
@@ -110,7 +129,9 @@ def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
         ).order_by(ContentPost.planned_publish_at.asc()).limit(limit)
     ).scalars().all()
     enabled = get_settings().platform_enabled
-    return [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    room = _daily_room(db, now)
+    return ok if room is None else ok[:room]
 
 
 def _too_soon(db, post: ContentPost, now: datetime, seen: set, col, statuses=None) -> bool:
@@ -392,6 +413,7 @@ def run_once(db, now, http=None) -> dict:
         stage("fanvue_digest", lambda: fanvue_digest_stage(db, now, http, result))
     stage("fan_purge", lambda: fan_purge_stage(db, now, result))
     stage("telegram_approvals", lambda: result.__setitem__("telegram_approved", poll_telegram(db)))
+    stage("approve_stale", lambda: result.__setitem__("auto_approved", approve_stale_drafts(db, now)))
     if dropbox_link.configured(settings):
         stage("dropbox_purge", lambda: result.__setitem__("dropbox_purged", dropbox_link.purge_posted(db)))
     if settings.AUTO_PLAN_ENABLED:

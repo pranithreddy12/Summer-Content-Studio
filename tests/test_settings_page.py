@@ -141,3 +141,145 @@ def test_draft_and_published_pushes_can_be_switched_off(client, fake_claude, mon
     sent.clear()
     assert client.post(URL, json={"platform": "instagram", "count": 1}).status_code == 201
     assert sent == [] and not get_settings().NOTIFY_NEW_DRAFTS and not get_settings().NOTIFY_PUBLISHED
+
+
+# ---- change log, pause button, quiet days, daily cap, approve-after-hours -------------------------------------
+
+def test_every_change_is_logged_and_shown(client):
+    save(client, PLANNER_RUN_HOUR="8", ENABLED_PLATFORMS=ALL)
+    client.post("/settings/reset", data={"key": "PLANNER_RUN_HOUR"})
+    log = [(c.key, c.old, c.new) for c in app_settings.changes(db())]
+    assert ("PLANNER_RUN_HOUR", "6", "8") in log
+    assert any(k == "PLANNER_RUN_HOUR" and "server value" in n for k, o, n in log)
+    page = client.get("/settings").text
+    assert "Recent changes" in page and "PLANNER_RUN_HOUR" in page
+
+
+def test_pause_and_resume_put_the_mode_back(client):
+    save(client, PUBLISHING_MODE="reminders", ENABLED_PLATFORMS=ALL)
+    assert "Pause posting" in client.get("/settings").text
+    client.post("/settings/pause")
+    assert get_settings().PUBLISHING_MODE == "off" and app_settings.paused(db())
+    assert "Resume" in client.get("/settings").text
+    client.post("/settings/resume")
+    assert get_settings().PUBLISHING_MODE == "reminders" and not app_settings.paused(db())
+    client.post("/settings/reset")
+    client.post("/settings/pause")                                   # already off: refused, nothing stored
+    assert not app_settings.paused(db()) and get_settings().PUBLISHING_MODE == "off"
+
+
+def test_quiet_day_is_outside_the_window_and_gets_no_slots(client):
+    import random
+    from datetime import date, datetime, timezone
+
+    from app.services.planner import make_slots
+    from app.services.window import in_window
+    from tests.test_planner import lee_rule
+
+    sunday_noon = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    monday_noon = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+    assert in_window(lee_rule(), sunday_noon) and in_window(lee_rule(), monday_noon)
+    save(client, NO_POST_WEEKDAYS=["sun"], ENABLED_PLATFORMS=ALL)
+    assert not in_window(lee_rule(), sunday_noon) and in_window(lee_rule(), monday_noon)
+    slots = make_slots(lee_rule(), date(2026, 10, 26), datetime(2026, 10, 21, tzinfo=timezone.utc), random.Random(3))
+    assert slots and all(s.local_day.weekday() != 6 for s in slots)
+
+
+def test_daily_cap_delays_the_extra_posts(client):
+    a, b = make_post(client, status="scheduled"), make_post(client, status="scheduled")
+    assert len(due_publish_posts(db(), NOON)) == 2
+    save(client, MAX_POSTS_PER_DAY="1", ENABLED_PLATFORMS=ALL)
+    assert len(due_publish_posts(db(), NOON)) == 1
+    s = db()
+    first = s.get(type(post_of(a)), a)
+    first.status, first.published_at = "published", NOON                  # one went out today
+    s.commit()
+    assert due_publish_posts(db(), NOON) == []                            # cap reached
+    from datetime import timedelta
+    assert [p.id for p in due_publish_posts(db(), NOON + timedelta(days=1))] == [b]   # next day: the extra one goes
+
+
+def test_unanswered_automatic_drafts_are_approved_after_the_set_hours(client, halloween_asset, fake_claude):
+    import random
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import utcnow
+    from app.models import ContentPost, PostingRule
+    from app.services.planner import approve_stale_drafts, plan_week
+    from tests.test_telegram_approvals import GIF
+
+    for i in range(4):
+        client.post("/api/v1/assets/upload", files={"file": (f"s{i}.gif", GIF + bytes([i + 40]), "image/gif")})
+    d = db()
+    rule = PostingRule(model_profile_id=1, platform="instagram", posts_per_week=10, min_per_day=1, max_per_day=2,
+                       window_start="08:00", window_end="21:00", min_gap_minutes=180, timezone="Europe/London",
+                       is_active=True, auto_topup=True)
+    d.add(rule)
+    d.commit()
+    plan_week(db(), db().get(PostingRule, rule.id), datetime(2026, 11, 2, 6, 0, tzinfo=timezone.utc),
+              rng=random.Random(1), client=fake_claude)
+    drafts = [p.id for p in db().query(ContentPost).filter(ContentPost.source == "ai")]
+    assert drafts
+    later = utcnow() + timedelta(hours=3)
+    assert approve_stale_drafts(db(), later) == 0                          # setting is 0 = off
+    save(client, AUTO_APPROVE_AFTER_HOURS="2", ENABLED_PLATFORMS=ALL)
+    assert approve_stale_drafts(db(), utcnow() + timedelta(hours=1)) == 0  # too young
+    assert approve_stale_drafts(db(), later) == len(drafts)
+    assert {p.status for p in db().query(ContentPost).filter(ContentPost.id.in_(drafts))} <= {"approved", "scheduled"}
+
+
+# ---- draft-writing options ---------------------------------------------------------------------------------
+
+def test_ai_client_follows_the_model_chosen_on_the_page(client):
+    from app.api.dependencies import get_claude_client
+
+    first = get_claude_client()
+    assert first.settings.CLAUDE_MODEL != "claude-haiku-5-5" and get_claude_client() is first     # reused while nothing changes
+    save(client, CLAUDE_MODEL="claude-haiku-5-5", CLAUDE_EFFORT="low", LLM_PROVIDER="mistral", ENABLED_PLATFORMS=ALL)
+    now = get_claude_client()
+    assert now is not first and (now.settings.CLAUDE_MODEL, now.settings.CLAUDE_EFFORT, now.settings.LLM_PROVIDER) == (
+        "claude-haiku-5-5", "low", "mistral")
+
+
+def test_a_custom_model_from_the_server_survives_saving_the_page(env, client):
+    env(CLAUDE_MODEL="my-custom-model")
+    page = client.get("/settings").text
+    assert "my-custom-model (set on the server)" in page
+    save(client, CLAUDE_MODEL="my-custom-model", ENABLED_PLATFORMS=ALL)
+    assert get_settings().CLAUDE_MODEL == "my-custom-model" and db().query(AppSetting).filter_by(key="CLAUDE_MODEL").count() == 0
+    save(client, CLAUDE_MODEL="not-a-listed-model", ENABLED_PLATFORMS=ALL)                    # typed junk is still refused
+    assert get_settings().CLAUDE_MODEL == "my-custom-model"
+
+
+def test_automatic_drafts_follow_the_media_options(client, monkeypatch):
+    import random
+    from datetime import date
+
+    from app.models import PostingRule
+    from app.services import random_draft
+    from app.services.planner import plan_week
+
+    s = db()
+    rules = {p: PostingRule(model_profile_id=1, platform=p, posts_per_week=7, min_per_day=1, max_per_day=1,
+                            window_start="08:00", window_end="21:00", min_gap_minutes=180, timezone="UTC",
+                            is_active=True, auto_topup=True) for p in ("instagram", "tiktok")}
+    s.add_all(rules.values())
+    s.commit()
+    asked = []
+    monkeypatch.setattr(random_draft, "generate_random_drafts", lambda db_, req, c, **kw: asked.append(req) or {"posts": []})
+
+    def top_up(platform):
+        asked.clear()
+        plan_week(s, rules[platform], datetime(2031, 3, 1, 20, 0, tzinfo=timezone.utc), rng=random.Random(1),
+                  start_day=date(2031, 3, 3), client=object())
+        assert asked
+        return asked[0]
+
+    from datetime import datetime, timezone
+    first = top_up("instagram")
+    assert first.media_type is None and not first.include_used and not first.both_platforms        # defaults
+    save(client, AUTO_DRAFT_MEDIA="image", AUTO_DRAFT_INCLUDE_USED="on", AUTO_DRAFT_BOTH_PLATFORMS="on", ENABLED_PLATFORMS=ALL)
+    ig = top_up("instagram")
+    assert ig.media_type.value == "image" and ig.include_used and ig.both_platforms
+    tt = top_up("tiktok")
+    assert tt.media_type.value == "video" and tt.include_used and not tt.both_platforms           # TikTok: video only, no twin of a twin

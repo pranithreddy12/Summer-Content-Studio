@@ -151,8 +151,10 @@ def make_slots(rule, start_day: date, now: datetime, rng: random.Random,
 
     slots: list[Slot] = []
     day = start_day
+    from app.services.window import is_quiet_day
+
     for i in range(len(counts)):  # 7 days, or fewer when plan_week got a shorter range
-        for m in _pick_minutes(counts[i], span, rule.min_gap_minutes, rng):
+        for m in ([] if is_quiet_day(day) else _pick_minutes(counts[i], span, rule.min_gap_minutes, rng)):
             minute_of_day = start_m + m
             local_dt = datetime.combine(
                 day, time(minute_of_day // 60, minute_of_day % 60), tzinfo=tz
@@ -241,28 +243,46 @@ def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
     return targets
 
 
-def _auto_approve(db: Session, posts: list, settings) -> None:
-    """Fully automatic platforms (Settings page): approve the AI drafts the planner just made and give them a slot
-    at once, then say so in a push. Everything else (drafts made by hand, other platforms) still waits for a human.
-    The normal pre-flight (window, media, caption, connected account) still runs when the post is published."""
+def _approve_now(db: Session, post, settings, why: str) -> bool:
+    """Approve an automatic draft and give it a slot at once, then push a note saying so. The normal publish
+    pre-flight (window, media, caption, connected account, platform enabled) still runs when it is due."""
     from app.services import AppError
     from app.services.notifications import notify
     from app.services.posts import _schedule_now, approve_post
 
+    try:
+        post = approve_post(db, post.id)
+        if post.status == "approved":
+            _schedule_now(db, post)
+    except AppError:
+        db.rollback()
+        return False
+    if settings.NOTIFY_NEW_DRAFTS:
+        snippet = " ".join((post.caption or "").split())[:200]
+        notify(db, "draft_auto_approved", f"auto:{post.id}", f"Auto-approved #{post.id} ({why}) · {post.platform} {post.content_type}",
+               snippet, url=f"/posts/{post.id}")
+    return True
+
+
+def _auto_approve(db: Session, posts: list, settings) -> None:
+    """Fully automatic platforms (Settings page): the AI drafts the planner just made are approved at once.
+    Everything else (drafts made by hand, other platforms) still waits for a human."""
     for post in posts:
-        if not settings.auto_approve(post.platform):
-            continue
-        try:
-            post = approve_post(db, post.id)
-            if post.status == "approved":
-                _schedule_now(db, post)
-        except AppError:
-            db.rollback()
-            continue
-        if settings.NOTIFY_NEW_DRAFTS:
-            snippet = " ".join((post.caption or "").split())[:200]
-            notify(db, "draft_auto_approved", f"auto:{post.id}", f"Auto-approved #{post.id} · {post.platform} {post.content_type}",
-                   snippet, url=f"/posts/{post.id}")
+        if settings.auto_approve(post.platform):
+            _approve_now(db, post, settings, "fully automatic")
+
+
+def approve_stale_drafts(db: Session, now: datetime, limit: int = 20) -> int:
+    """Settings 'Approve an unanswered automatic draft after N hours': AI-written drafts (source ai) that nobody
+    approved or archived in time; drafts typed by hand (source manual) always wait. Returns how many were approved."""
+    settings = get_settings()
+    hours = settings.AUTO_APPROVE_AFTER_HOURS
+    if hours <= 0:
+        return 0
+    rows = db.execute(select(ContentPost).where(
+        ContentPost.status == "draft", ContentPost.source == "ai",
+        ContentPost.created_at <= now - timedelta(hours=hours)).order_by(ContentPost.created_at).limit(limit)).scalars().all()
+    return sum(_approve_now(db, p, settings, f"no answer in {hours} h") for p in rows if settings.platform_enabled(p.platform))
 
 
 def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None,
@@ -355,7 +375,10 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
                 out = generate_random_drafts(db, RandomDraftRequest(
                     platform=platform_enum, campaign="auto", count=1,
                     profile_id=rule.model_profile_id,
-                    media_type="video" if rule.platform == "tiktok" else None,
+                    media_type="video" if rule.platform == "tiktok" else (
+                        None if settings.AUTO_DRAFT_MEDIA == "any" else settings.AUTO_DRAFT_MEDIA),
+                    include_used=settings.AUTO_DRAFT_INCLUDE_USED,
+                    both_platforms=settings.AUTO_DRAFT_BOTH_PLATFORMS and rule.platform == "instagram",
                 ), client, announce=not settings.auto_approve(rule.platform))
                 result.topup_drafts.extend(out["posts"])
                 remaining_cap -= 1

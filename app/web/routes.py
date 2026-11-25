@@ -61,9 +61,11 @@ def nav_counts() -> dict:
         from app.services.engagement import unanswered_count
         with session_scope() as db:
             drafts = db.execute(select(func.count(ContentPost.id)).where(ContentPost.status == PostStatus.draft.value)).scalar() or 0
-            return {"drafts": drafts, "comments": unanswered_count(db)}
+            from app.services.app_settings import paused
+
+            return {"drafts": drafts, "comments": unanswered_count(db), "paused": paused(db)}
     except Exception:
-        return {"drafts": 0, "comments": 0}
+        return {"drafts": 0, "comments": 0, "paused": False}
 
 
 templates.env.globals["nav_counts"] = nav_counts
@@ -1316,7 +1318,8 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
 
     fields = svc.rows(db)
     groups = [(name, list(items)) for name, items in groupby(fields, key=lambda f: f["group"])]
-    return _template_response("settings.html", {"request": request, "groups": groups, "flash": get_flash(request)})
+    return _template_response("settings.html", {"request": request, "groups": groups, "changes": svc.changes(db),
+                                                "flash": get_flash(request)})
 
 
 @router.post("/settings")
@@ -1333,6 +1336,30 @@ async def settings_save(request: Request, db: Session = Depends(get_db)):
     except AppError as e:
         return redirect_with_flash("/settings", e.message, "error")
     return redirect_with_flash("/settings", f"Saved. {changed} setting{'s' if changed != 1 else ''} changed." if changed else "Nothing changed.")
+
+
+@router.post("/settings/pause")
+async def settings_pause(db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import app_settings as svc
+
+    try:
+        svc.pause(db)
+    except AppError as e:
+        return redirect_with_flash("/settings", e.message, "error")
+    return redirect_with_flash("/settings", "Posting paused. Nothing will be published or reminded until you press Resume.")
+
+
+@router.post("/settings/resume")
+async def settings_resume(db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import app_settings as svc
+
+    try:
+        svc.resume(db)
+    except AppError as e:
+        return redirect_with_flash("/settings", e.message, "error")
+    return redirect_with_flash("/settings", "Posting resumed.")
 
 
 @router.post("/settings/reset")

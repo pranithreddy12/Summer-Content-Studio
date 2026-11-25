@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     TIKTOK_CLIENT_KEY: Optional[str] = None
     TIKTOK_CLIENT_SECRET: Optional[SecretStr] = None
     TIKTOK_POST_MODE: str = "inbox"  # inbox | direct (direct = mock-only until audited)
+    AUTO_DRAFT_MEDIA: str = "any"  # any | video | image: what the planner's automatic drafts are made from (TikTok: always video)
+    AUTO_DRAFT_INCLUDE_USED: bool = False  # automatic drafts may reuse media that was already used
+    AUTO_DRAFT_BOTH_PLATFORMS: bool = False  # automatic Instagram drafts from a video also make the TikTok twin
+    NO_POST_WEEKDAYS: str = ""  # comma list of mon..sun: nothing is planned, reminded or posted on those days
+    MAX_POSTS_PER_DAY: int = 0  # 0 = no cap; otherwise at most this many automatic posts/reminders a day, all platforms
+    AUTO_APPROVE_AFTER_HOURS: int = 0  # 0 = off; else an unanswered automatic draft is approved after this many hours
     AUTO_APPROVE_PLATFORMS: str = ""  # comma list: new automatic drafts for these platforms are approved without a human
     ENABLED_PLATFORMS: str = "instagram,tiktok,fanvue"  # comma list; a platform not listed gets no reminders/posts/planning
 
@@ -286,6 +292,10 @@ class Settings(BaseSettings):
         if self.NOTIFY_PROVIDER == "pushover":
             return self.PUSHOVER_APP_TOKEN is not None and self.PUSHOVER_USER_KEY is not None
         return False
+
+    def quiet_weekday(self, weekday: int) -> bool:
+        """weekday: Monday = 0."""
+        return ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[weekday] in {p.strip() for p in self.NO_POST_WEEKDAYS.split(",")}
 
     def auto_approve(self, platform: str) -> bool:
         return platform in {p.strip() for p in self.AUTO_APPROVE_PLATFORMS.split(",")}
