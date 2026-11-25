@@ -538,7 +538,7 @@ def test_l11_tiktok_topup_asks_for_video(client, monkeypatch):
     s.commit()
     asked = []
     monkeypatch.setattr(random_draft, "generate_random_drafts",
-                        lambda db_, req, client_: asked.append(req) or {"posts": []})
+                        lambda db_, req, client_, **kw: asked.append(req) or {"posts": []})
     plan_week(s, rule, datetime(2031, 3, 1, 20, 0, tzinfo=timezone.utc), rng=random.Random(1),
               start_day=date(2031, 3, 3), client=object())
     assert asked and all(r.media_type.value == "video" for r in asked)

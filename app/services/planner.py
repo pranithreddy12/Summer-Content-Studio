@@ -241,6 +241,30 @@ def _day_targets(rule, pattern: list[int], occupied: list[int]) -> list[int]:
     return targets
 
 
+def _auto_approve(db: Session, posts: list, settings) -> None:
+    """Fully automatic platforms (Settings page): approve the AI drafts the planner just made and give them a slot
+    at once, then say so in a push. Everything else (drafts made by hand, other platforms) still waits for a human.
+    The normal pre-flight (window, media, caption, connected account) still runs when the post is published."""
+    from app.services import AppError
+    from app.services.notifications import notify
+    from app.services.posts import _schedule_now, approve_post
+
+    for post in posts:
+        if not settings.auto_approve(post.platform):
+            continue
+        try:
+            post = approve_post(db, post.id)
+            if post.status == "approved":
+                _schedule_now(db, post)
+        except AppError:
+            db.rollback()
+            continue
+        if settings.NOTIFY_NEW_DRAFTS:
+            snippet = " ".join((post.caption or "").split())[:200]
+            notify(db, "draft_auto_approved", f"auto:{post.id}", f"Auto-approved #{post.id} · {post.platform} {post.content_type}",
+                   snippet, url=f"/posts/{post.id}")
+
+
 def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None,
               start_day: date | None = None, client=None, days: int = 7) -> PlanResult:
     """Plan `days` days (1-7, default 7) from `start_day` (default tomorrow) for one (profile, platform) rule.
@@ -332,12 +356,14 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
                     platform=platform_enum, campaign="auto", count=1,
                     profile_id=rule.model_profile_id,
                     media_type="video" if rule.platform == "tiktok" else None,
-                ), client)
+                ), client, announce=not settings.auto_approve(rule.platform))
                 result.topup_drafts.extend(out["posts"])
                 remaining_cap -= 1
             except Exception as e:  # top-up is best-effort, never blocks the plan
                 logger.warning("planner top-up failed: %s", e)
                 break
+
+    _auto_approve(db, result.topup_drafts, settings)
 
     # ---- slots_unfilled push: unfilled slots within 48 h, deduped per day
     if result.unfilled:

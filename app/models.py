@@ -455,6 +455,16 @@ class PostingRule(Base):
     profile: Mapped["ModelProfile"] = relationship("ModelProfile", lazy="selectin")
 
 
+class AppSetting(Base):
+    """One value saved on the studio Settings page; overrides .env (app/settings_spec.py lists the keys)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
 class NotificationLog(Base):
     """Delivery log only: no message bodies with secrets (PLAN §6)."""
 

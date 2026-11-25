@@ -59,7 +59,7 @@ def _campaign_for(asset: MediaAsset, requested: str) -> str:
     return next((t.slug for t in asset.tags if t.is_category), DEFAULT_CAMPAIGN)
 
 
-def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict:
+def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announce: bool = True) -> dict:
     """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created.
 
     both_platforms (PLAN §9a step 7): each random VIDEO asset creates an
@@ -124,7 +124,8 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client) -> dict
             raise AppError(errors[-1].get("code", "error"), errors[-1]["message"], errors[-1]["status"])
         raise AppError("no_assets", "No matching unused images/videos. Upload or sync media, "
                        "or tick 'include already-used assets'.", 409)
-    _notify_new_drafts(db, posts)
+    if announce and get_settings().NOTIFY_NEW_DRAFTS:
+        _notify_new_drafts(db, posts)
     return {"posts": [get_post(db, p.id) for p in posts], "errors": errors, "available": available}
 
 

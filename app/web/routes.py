@@ -1308,6 +1308,46 @@ async def accounts_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, db: Session = Depends(get_db)):
+    from itertools import groupby
+
+    from app.services import app_settings as svc
+
+    fields = svc.rows(db)
+    groups = [(name, list(items)) for name, items in groupby(fields, key=lambda f: f["group"])]
+    return _template_response("settings.html", {"request": request, "groups": groups, "flash": get_flash(request)})
+
+
+@router.post("/settings")
+async def settings_save(request: Request, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import app_settings as svc
+    from app.settings_spec import FIELDS
+
+    form = await request.form()
+    data = {f["key"]: (form.getlist(f["key"]) if f["kind"] == "multi" else form.get(f["key"]))
+            for f in FIELDS if f["kind"] in ("multi", "bool") or f["key"] in form}
+    try:
+        changed = svc.save(db, {k: v for k, v in data.items() if v is not None})
+    except AppError as e:
+        return redirect_with_flash("/settings", e.message, "error")
+    return redirect_with_flash("/settings", f"Saved. {changed} setting{'s' if changed != 1 else ''} changed." if changed else "Nothing changed.")
+
+
+@router.post("/settings/reset")
+async def settings_reset(request: Request, db: Session = Depends(get_db)):
+    from app.services import AppError
+    from app.services import app_settings as svc
+
+    key = (await request.form()).get("key") or None
+    try:
+        svc.reset(db, key)
+    except AppError as e:
+        return redirect_with_flash("/settings", e.message, "error")
+    return redirect_with_flash("/settings", "Back to the .env values." if key is None else f"{key} is back to its .env value.")
+
+
 @router.post("/accounts/{account_id}/disconnect")
 async def accounts_disconnect(account_id: int, db: Session = Depends(get_db)):
     from app.services import AppError

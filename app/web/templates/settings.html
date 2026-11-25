@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Settings — Summer Content{% endblock %}
+{% block content %}
+<div class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Setup</span>
+      <h1>Settings</h1>
+      <p class="page-lede">Change how the studio runs without touching the server. Passwords, keys and tokens are not shown here; they stay on the server. Per-platform posting rules (posts per week, time window, gap, auto top-up) are on the <a href="/planner">Planner</a>.</p>
+    </div>
+  </header>
+
+  <form method="post" action="/settings" id="settings-form">
+    {% for name, items in groups %}
+    <section class="section">
+      <div class="section-head"><h2>{{ name }}</h2></div>
+      <div class="card" style="padding:16px;">
+        {% for f in items %}
+        <div class="form-row" style="margin-bottom:16px;">
+          {% if f.kind == 'bool' %}
+            <label><input type="checkbox" name="{{ f.key }}" value="on" {% if f.value %}checked{% endif %}> <strong>{{ f.label }}</strong></label>
+          {% elif f.kind == 'int' %}
+            <label for="{{ f.key }}"><strong>{{ f.label }}</strong></label>
+            <input type="number" id="{{ f.key }}" name="{{ f.key }}" value="{{ f.value }}" min="{{ f.min }}" max="{{ f.max }}" style="max-width:140px;">
+          {% elif f.kind == 'choice' %}
+            <label for="{{ f.key }}"><strong>{{ f.label }}</strong></label>
+            <select id="{{ f.key }}" name="{{ f.key }}">
+              {% for value, text in f.choices %}<option value="{{ value }}" {% if value == f.value %}selected{% endif %}>{{ text }}</option>{% endfor %}
+            </select>
+          {% else %}
+            <strong>{{ f.label }}</strong>
+            <div>
+              {% for value, text in f.choices %}
+              <label style="margin-right:16px;"><input type="checkbox" name="{{ f.key }}" value="{{ value }}" {% if value in f.selected %}checked{% endif %}> {{ text }}</label>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if f.help %}<p class="small" style="margin:4px 0 0;">{{ f.help }}</p>{% endif %}
+          <p class="small" style="margin:2px 0 0;">
+            {% if f.source == 'studio' %}Changed here (server value: {{ f.env_value }}) ·
+              <button type="submit" formaction="/settings/reset" name="key" value="{{ f.key }}" class="linkbtn" formnovalidate>use the server value</button>
+            {% else %}Using the server value{% endif %}
+          </p>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save settings</button>
+      <button type="submit" formaction="/settings/reset" class="btn" formnovalidate onclick="return confirm('Go back to the server (.env) values for every setting?')">Reset everything</button>
+    </div>
+  </form>
+</div>
+<script>
+document.getElementById('settings-form').addEventListener('submit', function (e) {
+  var m = document.getElementById('PUBLISHING_MODE');
+  if (e.submitter && e.submitter.formAction && e.submitter.formAction.endsWith('/settings/reset')) return;
+  var auto = Array.prototype.some.call(document.querySelectorAll('input[name="AUTO_APPROVE_PLATFORMS"]'), function (c) { return c.checked && !c.defaultChecked; });
+  if (auto && !confirm('Fully automatic: posts on the ticked platforms will be approved and published WITHOUT you seeing them first. Continue?')) { e.preventDefault(); return; }
+  if (m && m.value === 'live' && m.querySelector('option[selected]') && m.querySelector('option[selected]').value !== 'live'
+      && !confirm('Switch to LIVE? Approved posts will be published on the real accounts.')) e.preventDefault();
+});
+</script>
+{% endblock %}

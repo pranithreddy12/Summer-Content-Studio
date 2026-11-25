@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     TIKTOK_CLIENT_KEY: Optional[str] = None
     TIKTOK_CLIENT_SECRET: Optional[SecretStr] = None
     TIKTOK_POST_MODE: str = "inbox"  # inbox | direct (direct = mock-only until audited)
+    AUTO_APPROVE_PLATFORMS: str = ""  # comma list: new automatic drafts for these platforms are approved without a human
+    ENABLED_PLATFORMS: str = "instagram,tiktok,fanvue"  # comma list; a platform not listed gets no reminders/posts/planning
 
     # Worker
     WORKER_INTERVAL_SECONDS: int = 60
@@ -74,6 +76,8 @@ class Settings(BaseSettings):
 
     # Notifications (credentials live only in env - never logged/returned)
     NOTIFY_PROVIDER: str = "none"  # none | telegram | ntfy | pushover
+    NOTIFY_NEW_DRAFTS: bool = True  # one push per new draft (with an Approve button on Telegram)
+    NOTIFY_PUBLISHED: bool = True  # one push after a post goes live
     TELEGRAM_BOT_TOKEN: Optional[SecretStr] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
     NTFY_SERVER: str = "https://ntfy.sh"
@@ -283,6 +287,12 @@ class Settings(BaseSettings):
             return self.PUSHOVER_APP_TOKEN is not None and self.PUSHOVER_USER_KEY is not None
         return False
 
+    def auto_approve(self, platform: str) -> bool:
+        return platform in {p.strip() for p in self.AUTO_APPROVE_PLATFORMS.split(",")}
+
+    def platform_enabled(self, platform: str) -> bool:
+        return platform in {p.strip() for p in self.ENABLED_PLATFORMS.split(",")}
+
     @property
     def live_publishing_ready(self) -> bool:
         """Prerequisites for PUBLISHING_MODE=live (worker refuses without them, PLAN §2)."""
@@ -294,14 +304,54 @@ class Settings(BaseSettings):
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Get cached settings instance."""
+def _env_settings() -> Settings:
     return Settings()
 
 
+_OVERRIDES = {"engine": None, "at": 0.0, "value": {}}
+_OVERRIDES_TTL = 5.0  # seconds: the worker (another process) picks up a Settings-page change within this time
+
+
+def _studio_overrides() -> dict:
+    """Values saved on the studio Settings page (table app_settings) win over .env. Only reads an engine that is
+    already open (never creates one: get_engine() itself calls get_settings()); no table / no database = .env only."""
+    import time
+
+    from app import db as _db
+
+    engine = _db._engine
+    if engine is None:
+        return {}
+    c = _OVERRIDES
+    if c["engine"] is engine and time.monotonic() - c["at"] < _OVERRIDES_TTL:
+        return c["value"]
+    try:
+        from sqlalchemy import text
+
+        from app.settings_spec import decode
+
+        with engine.connect() as conn:
+            value = decode(conn.execute(text("SELECT key, value FROM app_settings")).all())
+    except Exception:  # table missing (migrations not run yet) or database unreachable
+        value = {}
+    c.update(engine=engine, at=time.monotonic(), value=value)
+    return value
+
+
+def get_settings() -> Settings:
+    """Settings = .env (cached) with the studio Settings page values on top (re-read every few seconds)."""
+    base = _env_settings()
+    overrides = _studio_overrides()
+    return base.model_copy(update=overrides) if overrides else base
+
+
 def clear_settings_cache() -> None:
-    """Clear the settings cache (useful for testing)."""
-    get_settings.cache_clear()
+    """Clear the settings cache (tests, and right after the Settings page saves)."""
+    _env_settings.cache_clear()
+    _OVERRIDES["engine"] = None
+
+
+get_settings.cache_clear = clear_settings_cache  # the old lru_cache API
 
 
 def publishing_mode() -> str:

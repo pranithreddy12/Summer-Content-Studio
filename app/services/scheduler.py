@@ -89,7 +89,8 @@ def due_reminder_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
         .order_by(ContentPost.planned_publish_at.asc())
         .limit(limit)
     ).scalars().all()
-    return [p for p in rows if in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    enabled = get_settings().platform_enabled
+    return [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
 
 
 def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
@@ -108,7 +109,8 @@ def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
             or_(ContentPost.next_attempt_at.is_(None), ContentPost.next_attempt_at <= now),
         ).order_by(ContentPost.planned_publish_at.asc()).limit(limit)
     ).scalars().all()
-    return [p for p in rows if in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    enabled = get_settings().platform_enabled
+    return [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
 
 
 def _too_soon(db, post: ContentPost, now: datetime, seen: set, col, statuses=None) -> bool:
@@ -330,7 +332,7 @@ def planner_tick(db, now: datetime, state: dict) -> dict:
     for rule in rules:
         local = now.astimezone(ZoneInfo(rule.timezone))
         today = local.date().isoformat()
-        if local.hour < settings.PLANNER_RUN_HOUR or state.get(str(rule.id)) == today:
+        if not settings.platform_enabled(rule.platform) or local.hour < settings.PLANNER_RUN_HOUR or state.get(str(rule.id)) == today:
             continue
         state[str(rule.id)] = today  # mark first: a failing plan must not retry every minute
         try:

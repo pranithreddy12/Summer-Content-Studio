@@ -112,6 +112,8 @@ def preflight_reasons(db: Session, post: ContentPost, now: Optional[datetime] = 
             reasons.append("media_not_publishable: external-url media cannot be served to the platform")
         elif not ok and code == "fanvue_only_media":
             reasons.append("fanvue_only_media: this media is marked Fanvue-only; pick another asset")
+    if not get_settings().platform_enabled(post.platform):
+        reasons.append(f"platform_disabled: {post.platform} is switched off on the Settings page")
     offer = fanvue_offer_problem(post)
     if offer:
         reasons.append(f"invalid_fanvue_offer: {offer}")
@@ -138,6 +140,8 @@ def check_publishable(
             f"Cannot publish a post with status '{post.status}'.",
             status=409,
         )
+    if not get_settings().platform_enabled(post.platform):
+        raise AppError("platform_disabled", f"{post.platform.capitalize()} is switched off on the Settings page.", status=409)
     if post.media_asset_id is None:
         raise AppError("media_required", "A publishable post needs media attached.", status=409)
     ok, code = asset_is_publishable(post)
@@ -329,7 +333,7 @@ def _apply_success(db: Session, post: ContentPost, attempt: PublishAttempt, resu
     if inbox:
         notify(db, "tiktok_ready", f"tiktok:{post.id}", "Video is in your TikTok drafts",
                "Open TikTok, add the AI label and press Publish.", url=f"/posts/{post.id}")
-    else:  # live and public: a caption snippet plus the platform's own link to the post (when the platform gave one)
+    elif get_settings().NOTIFY_PUBLISHED:  # live and public: a caption snippet plus the platform's own link to the post (when the platform gave one)
         snippet = " ".join((post.caption or "").split())[:80]
         notify(db, "published", f"published:{post.id}", f"Posted to {post.platform.title()}",
                "\n".join(part for part in (snippet, post.external_url) if part), url=f"/posts/{post.id}")
