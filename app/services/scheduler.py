@@ -104,10 +104,10 @@ def due_reminder_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
             ContentPost.reminded_at.is_(None),
         )
         .order_by(ContentPost.planned_publish_at.asc())
-        .limit(limit)
+        .limit(200)  # wide net: posts of a switched-off platform / outside the window must not starve the rest
     ).scalars().all()
     enabled = get_settings().platform_enabled
-    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)][:limit]
     room = _daily_room(db, now)
     return ok if room is None else ok[:room]
 
@@ -126,10 +126,10 @@ def due_publish_posts(db, now: datetime, limit: int = 10) -> list[ContentPost]:
             ContentPost.planned_publish_at.isnot(None),
             ContentPost.planned_publish_at <= now,
             or_(ContentPost.next_attempt_at.is_(None), ContentPost.next_attempt_at <= now),
-        ).order_by(ContentPost.planned_publish_at.asc()).limit(limit)
+        ).order_by(ContentPost.planned_publish_at.asc()).limit(200)
     ).scalars().all()
     enabled = get_settings().platform_enabled
-    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)]
+    ok = [p for p in rows if enabled(p.platform) and in_window(get_rule(db, p.model_profile_id, p.platform), now)][:limit]
     room = _daily_room(db, now)
     return ok if room is None else ok[:room]
 
