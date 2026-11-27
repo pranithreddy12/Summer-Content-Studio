@@ -47,8 +47,9 @@
   </div>
   {% endif %}
   {% if post.platform != 'fanvue' and post.status != 'archived' %}
-  <form method="post" action="/posts/{{ post.id }}/copy-to-fanvue" class="inline-form">
-    <button type="submit" class="btn btn-ghost">Copy to Fanvue</button>
+  <form method="post" action="/posts/{{ post.id }}/copy-to-fanvue" class="fanvue-copy">
+    <span>Want this on Fanvue too? It makes a draft with the same text and media.</span>
+    <button type="submit" class="btn btn-primary">Copy to Fanvue</button>
   </form>
   {% endif %}
 

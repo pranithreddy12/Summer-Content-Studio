@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     TIKTOK_POST_MODE: str = "inbox"  # inbox | direct (direct = mock-only until audited)
     AUTO_DRAFT_MEDIA: str = "any"  # any | video | image: what the planner's automatic drafts are made from (TikTok: always video)
     AUTO_DRAFT_INCLUDE_USED: bool = False  # automatic drafts may reuse media that was already used
+    AUTO_DRAFT_ALL_PLATFORMS: bool = False  # each automatic Instagram draft comes as a set: Instagram + TikTok + Fanvue
     AUTO_DRAFT_FANVUE_TWIN: bool = False  # every automatic Instagram draft is also copied as a Fanvue draft (same text)
     AUTO_DRAFT_BOTH_PLATFORMS: bool = False  # automatic Instagram drafts from a video also make the TikTok twin
     NO_POST_WEEKDAYS: str = ""  # comma list of mon..sun: nothing is planned, reminded or posted on those days

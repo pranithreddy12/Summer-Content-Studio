@@ -435,3 +435,58 @@ def test_copy_to_fanvue_button_makes_one_draft(client, fake_claude):
     assert len(fv) == 1 and fv[0]["caption"] == ig["caption"] and fv[0]["status"] == "draft"
     client.post(f"/posts/{ig['id']}/copy-to-fanvue", follow_redirects=False)  # second click: refused
     assert len([p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "fanvue"]) == 1
+
+
+def _bundle_setup(client, videos, images=0):
+    import app.db as appdb
+    for n in range(videos):
+        r = client.post("/api/v1/assets/upload", files={"file": (f"v{n}.mp4", _mp4_kb() + bytes([n + 1]) * 8, "video/mp4")},
+                        data={"description": f"v{n}"})
+        assert r.status_code == 201, r.text
+    for n in range(images):
+        png = (FIXTURES / "tiny.png").read_bytes() + b"\x00" * (n + 1)
+        assert client.post("/api/v1/assets/upload", files={"file": (f"i{n}.png", png, "image/png")},
+                           data={"description": "i"}).status_code == 201
+    return appdb.get_session_factory()
+
+
+def _bundle(sf, fake_claude, media=None):
+    from app.models import Platform
+    from app.schemas import RandomDraftRequest
+    from app.services.random_draft import generate_random_drafts
+    with sf() as s:
+        out = generate_random_drafts(s, RandomDraftRequest(platform=Platform.instagram, campaign="auto", count=1, media_type=media),
+                                     fake_claude, announce=False, bundle=True)
+        return {p.platform: p for p in out["posts"]}
+
+
+def test_bundle_fresh_video_goes_to_instagram_tiktok_and_fanvue(client, fake_claude):
+    sf = _bundle_setup(client, videos=1)
+    got = _bundle(sf, fake_claude, "video")
+    assert set(got) == {"instagram", "tiktok", "fanvue"}
+    assert len({p.media_asset_id for p in got.values()}) == 1          # one video everywhere
+    assert got["instagram"].group_key == got["tiktok"].group_key == got["fanvue"].group_key
+    assert all(p.status == "draft" for p in got.values())
+
+
+def test_bundle_image_gets_a_different_tiktok_video_that_instagram_uses_next_day(client, fake_claude, monkeypatch):
+    from datetime import timedelta
+    from app.db import utcnow
+    from app.models import ContentPost
+    from app.services import random_draft
+    sf = _bundle_setup(client, videos=3, images=1)
+    day1 = _bundle(sf, fake_claude, "image")
+    assert set(day1) == {"instagram", "tiktok", "fanvue"}
+    assert day1["instagram"].media_asset_id == day1["fanvue"].media_asset_id != day1["tiktok"].media_asset_id
+    assert day1["tiktok"].asset.media_type == "video" and day1["tiktok"].group_key != day1["instagram"].group_key
+    # same day: the TikTok video is not used on Instagram yet; the next day it is
+    with sf() as s:
+        assert random_draft.carried_over_videos(s, random_draft.get_settings()) == []
+        s.get(ContentPost, day1["tiktok"].id).created_at = utcnow() - timedelta(days=1, hours=1)
+        s.commit()
+        assert [a.id for a in random_draft.carried_over_videos(s, random_draft.get_settings())] == [day1["tiktok"].media_asset_id]
+    monkeypatch.setattr(random_draft.random, "random", lambda: 0.0)
+    day2 = _bundle(sf, fake_claude)
+    assert day2["instagram"].media_asset_id == day1["tiktok"].media_asset_id         # yesterday's TikTok video
+    assert day2["fanvue"].media_asset_id == day2["instagram"].media_asset_id
+    assert day2["tiktok"].media_asset_id not in (day1["tiktok"].media_asset_id, day2["instagram"].media_asset_id)  # a new one

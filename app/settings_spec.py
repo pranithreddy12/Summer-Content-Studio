@@ -64,6 +64,8 @@ FIELDS = [
      "help": "Off: when every item has been used, automatic drafting stops until you add media."},
     {"key": "AUTO_DRAFT_BOTH_PLATFORMS", "group": "Draft writing", "label": "Videos: make the TikTok twin with the Instagram draft",
      "kind": "bool", "help": "An automatic Instagram draft from a video also creates a TikTok draft with its own caption, posted the same day."},
+    {"key": "AUTO_DRAFT_ALL_PLATFORMS", "group": "Draft writing", "label": "Daily drafts for Instagram, TikTok and Fanvue together", "kind": "bool",
+     "help": "Each daily Instagram draft comes with a Fanvue copy and a TikTok draft. A video goes to Instagram and TikTok together; an image or yesterday's TikTok video goes to Instagram and Fanvue, and TikTok gets a different video, which Instagram uses the next day. Runs from the Instagram rule's auto top-up; TikTok and Fanvue then need their own posting rules for times."},
     {"key": "AUTO_DRAFT_FANVUE_TWIN", "group": "Draft writing", "label": "Also make a Fanvue draft from every Instagram draft",
      "kind": "bool", "help": "The Fanvue draft reuses the Instagram text and media (subscribers only, free). It still waits for approval unless Fanvue is ticked under Fully automatic. Needs a Fanvue posting rule on the Planner page to get a time."},
     {"key": "NO_POST_WEEKDAYS", "group": "Limits", "label": "No posting on", "kind": "multi",

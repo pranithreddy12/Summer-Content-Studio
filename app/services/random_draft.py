@@ -9,7 +9,7 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import platforms
@@ -59,6 +59,36 @@ def _campaign_for(asset: MediaAsset, requested: str) -> str:
     return next((t.slug for t in asset.tags if t.is_category), DEFAULT_CAMPAIGN)
 
 
+def _draft(db: Session, client, profile, req, target: str, asset: MediaAsset, key=None, group_key=None):
+    gen = GenerateRequest(
+        profile_id=profile.id, platform=target, content_type=CONTENT_TYPE[(target, asset.media_type)],
+        campaign=_campaign_for(asset, req.campaign), asset_id=asset.id,
+        seasonal_context=req.seasonal_context, idempotency_key=key)
+    post = generate_draft(db, gen, client)
+    if group_key:
+        post = get_post(db, post.id)
+        post.group_key = group_key
+        db.commit()
+    return post
+
+
+def carried_over_videos(db: Session, settings) -> list[MediaAsset]:
+    """Videos that went to TikTok on an earlier day but not to Instagram yet: Instagram uses them next (oldest first)."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo(settings.APP_TIMEZONE)).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    on_instagram = select(ContentPost.media_asset_id).where(
+        ContentPost.platform == "instagram", ContentPost.status != "archived", ContentPost.media_asset_id.isnot(None))
+    first_tiktok = (select(ContentPost.media_asset_id.label("asset_id"), func.min(ContentPost.created_at).label("at"))
+                    .where(ContentPost.platform == "tiktok", ContentPost.status != "archived",
+                           ContentPost.media_asset_id.isnot(None)).group_by(ContentPost.media_asset_id).subquery())
+    rows = db.execute(select(MediaAsset).join(first_tiktok, first_tiktok.c.asset_id == MediaAsset.id).where(
+        MediaAsset.media_type == MediaType.video.value, MediaAsset.is_active == True,  # noqa: E712
+        first_tiktok.c.at < today, MediaAsset.id.not_in(on_instagram)).order_by(first_tiktok.c.at)).scalars().all()
+    return [a for a in rows if a.storage_type in ("upload", "local_sync") and not a.fanvue_only and _usable(a, settings)]
+
+
 def _fanvue_twin(db: Session, post: ContentPost) -> ContentPost:
     """Copy an Instagram draft as a Fanvue draft (same text and media, subscribers only, free). Draft only."""
     post.group_key = post.group_key or uuid.uuid4().hex[:40]
@@ -87,7 +117,7 @@ def copy_to_fanvue(db: Session, post_id: int) -> ContentPost:
 
 
 def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announce: bool = True,
-                           fanvue_twin: bool = False) -> dict:
+                           fanvue_twin: bool = False, bundle: bool = False) -> dict:
     """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created.
 
     both_platforms (PLAN §9a step 7): each random VIDEO asset creates an
@@ -113,13 +143,25 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announc
                            "code": getattr(e, "code", "dropbox_error"), "message": getattr(e, "message", str(e))})
         pool = eligible_assets(db, req.media_type.value if req.media_type else None, req.tag, req.include_used)
     available = len(pool)
+    settings = get_settings()
+    taken: set[int] = set()  # media used by this call (bundle mode)
     for i in range(req.count):
-        if not pool:
+        carry = None
+        if bundle:  # a waiting TikTok video goes to Instagram on half the days (oldest first), else a random pick
+            waiting = [a for a in carried_over_videos(db, settings) if a.id not in taken]
+            if waiting and random.random() < 0.5:
+                carry = waiting[0]
+        if carry is None and not pool:
             break
-        asset = pool.pop(random.randrange(len(pool)))
-        group_key = uuid.uuid4().hex[:40] if req.both_platforms else None
+        asset = carry or pool.pop(random.randrange(len(pool)))
+        pool = [a for a in pool if a.id != asset.id]
+        taken.add(asset.id)
+        group_key = uuid.uuid4().hex[:40] if (req.both_platforms or bundle) else None
         targets = (["instagram", "tiktok"] if asset.media_type == MediaType.video.value else ["instagram"])
-        if not req.both_platforms:
+        if bundle:  # same video on both only when it is fresh; images and carried-over videos get a different TikTok video
+            targets = ["instagram"] + (["tiktok"] if asset.media_type == MediaType.video.value and not carry
+                                       and settings.platform_enabled("tiktok") else [])
+        elif not req.both_platforms:
             targets = [req.platform.value]
         for target in targets:
             key = f"{req.batch_key}-{i}-{target}" if req.batch_key else None
@@ -128,26 +170,31 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announc
                 if done:
                     posts.append(done)
                     continue
-            gen = GenerateRequest(
-                profile_id=profile.id, platform=target,
-                content_type=CONTENT_TYPE[(target, asset.media_type)],
-                campaign=_campaign_for(asset, req.campaign), asset_id=asset.id,
-                seasonal_context=req.seasonal_context, idempotency_key=key,
-            )
             try:
-                post = generate_draft(db, gen, client)
-                if group_key:
-                    stored = get_post(db, post.id)
-                    stored.group_key = group_key
-                    db.commit()
-                    post = stored
-                posts.append(post)
+                posts.append(_draft(db, client, profile, req, target, asset, key, group_key))
             except HTTPException as e:  # provider/validation error: stop (the next call would likely fail too)
                 detail = e.detail if isinstance(e.detail, dict) else {"code": "error", "message": str(e.detail)}
                 errors.append({"asset_id": asset.id, "filename": asset.filename, "status": e.status_code, **detail})
                 break
 
-    if fanvue_twin:  # one Fanvue copy per new Instagram draft
+    if bundle and settings.platform_enabled("tiktok"):  # a TikTok draft for every Instagram draft that has none yet
+        for ig in [p for p in posts if p.platform == "instagram"]:
+            if any(p.platform == "tiktok" and p.group_key == ig.group_key for p in posts):
+                continue
+            spare = [a for a in eligible_assets(db, "video", req.tag, req.include_used) if a.id not in taken]
+            if not spare:
+                errors.append({"asset_id": None, "filename": "", "status": 409, "code": "no_video",
+                               "message": "No other video for TikTok (add videos to the library)."})
+                break
+            video = random.choice(spare)
+            try:
+                posts.append(_draft(db, client, profile, req, "tiktok", video))  # its own group: Instagram uses it tomorrow
+                taken.add(video.id)
+            except HTTPException as e:
+                detail = e.detail if isinstance(e.detail, dict) else {"code": "error", "message": str(e.detail)}
+                errors.append({"asset_id": video.id, "filename": video.filename, "status": e.status_code, **detail})
+                break
+    if (fanvue_twin or bundle) and settings.platform_enabled("fanvue"):  # one Fanvue copy per new Instagram draft
         posts += [_fanvue_twin(db, p) for p in list(posts) if p.platform == "instagram"]
     if not posts:
         if errors:

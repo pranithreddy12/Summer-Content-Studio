@@ -361,11 +361,13 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
     result.unfilled = [s for s in slots if id(s) not in taken]
 
     # ---- Optional AI draft top-up: DRAFTS only, never approved; per-run cap
+    # 'All platforms' mode drafts everything from the Instagram rule, so TikTok/Fanvue rules do not top up themselves
     if rule.auto_topup and client is not None and result.unfilled \
-            and settings.PLANNER_MAX_TOPUP_PER_DAY > 0:
+            and settings.PLANNER_MAX_TOPUP_PER_DAY > 0 \
+            and not (settings.AUTO_DRAFT_ALL_PLATFORMS and rule.platform != "instagram"):
         from app.schemas import RandomDraftRequest
         from app.models import Platform
-        from app.services.random_draft import generate_random_drafts
+        from app.services.random_draft import _notify_new_drafts, generate_random_drafts
 
         remaining_cap = settings.PLANNER_MAX_TOPUP_PER_DAY
         platform_enum = Platform(rule.platform)
@@ -379,9 +381,11 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
                         None if settings.AUTO_DRAFT_MEDIA == "any" else settings.AUTO_DRAFT_MEDIA),
                     include_used=settings.AUTO_DRAFT_INCLUDE_USED,
                     both_platforms=settings.AUTO_DRAFT_BOTH_PLATFORMS and rule.platform == "instagram",
-                ), client, announce=not settings.auto_approve(rule.platform),
-                    fanvue_twin=settings.AUTO_DRAFT_FANVUE_TWIN and rule.platform == "instagram" and settings.platform_enabled("fanvue"))
+                ), client, announce=False, fanvue_twin=settings.AUTO_DRAFT_FANVUE_TWIN and rule.platform == "instagram",
+                    bundle=settings.AUTO_DRAFT_ALL_PLATFORMS and rule.platform == "instagram")
                 result.topup_drafts.extend(out["posts"])
+                if settings.NOTIFY_NEW_DRAFTS:  # fully automatic platforms get the 'auto-approved' note instead
+                    _notify_new_drafts(db, [p for p in out["posts"] if not settings.auto_approve(p.platform)])
                 remaining_cap -= 1
             except Exception as e:  # top-up is best-effort, never blocks the plan
                 logger.warning("planner top-up failed: %s", e)
