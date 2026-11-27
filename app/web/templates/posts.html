@@ -43,7 +43,7 @@
   {% set live = settings.PUBLISHING_MODE == 'live' %}
   {% set here = '/posts?platform=' ~ (filters.platform or '') | urlencode ~ '&status_filter=' ~ (filters.status or '') | urlencode ~ '&campaign=' ~ (filters.campaign or '') | urlencode ~ '&page=' ~ page %}
   <ul class="wl">
-    {% for post in posts %}
+    {% for row in rows %}{% set post = row.post %}
     <li class="wl-item wl-item-queue">
       <a class="wl-thumb" href="/posts/{{ post.id }}" tabindex="-1" aria-hidden="true">
         {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}<img src="/api/v1/assets/{{ post.asset.id }}/file" alt="" loading="lazy">{% elif post.asset and post.asset.media_type == 'video' and post.asset.storage_type != 'external_url' %}<video src="/api/v1/assets/{{ post.asset.id }}/file#t=0.1" preload="metadata" muted playsinline></video>{% else %}<span>{{ 'Video link' if post.asset and post.asset.media_type == 'video' else 'No image' }}</span>{% endif %}
@@ -56,6 +56,19 @@
           <span>{{ post.campaign }}</span>
           <span class="wl-id">#{{ post.id }}</span>
         </div>
+        {% if row.also %}
+        <div class="wl-also">Also on:
+          {% for other in row.also %}
+          <a href="/posts/{{ other.id }}" class="wl-chip"><strong>{{ other.platform | plat }}</strong> <span class="badge badge-{{ other.status }}">{{ other.status }}</span> <span>{% if other.planned_publish_at %}{{ other.planned_publish_at | when }}{% else %}no time set{% endif %}</span> <span class="wl-id">#{{ other.id }}</span></a>
+          {% if other.status == 'draft' %}
+          <form method="post" action="/posts/{{ other.id }}/approve" class="inline-form"{% if live %} onsubmit="return confirm('Approve post #{{ other.id }}? Live mode: it will publish automatically at its planned time.')"{% endif %}>
+            <input type="hidden" name="next" value="{{ here }}">
+            <button type="submit" class="btn btn-sm btn-ok">Approve {{ other.platform | plat }}</button>
+          </form>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       <div class="wl-state">
         <span class="badge badge-{{ post.status }}">{{ post.status }}</span>

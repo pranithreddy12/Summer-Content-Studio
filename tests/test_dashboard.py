@@ -533,3 +533,15 @@ def test_delete_published_counts_first_then_deletes_only_published_and_keeps_a_c
     assert "Deleted 1 published" in done.output and "Database copy saved" in done.output
     with appdb.get_session_factory()() as s:
         assert s.query(ContentPost).count() == keep and s.query(ContentPost).filter_by(status="published").count() == 0
+
+
+def test_queue_shows_a_draft_shared_by_two_platforms_once_with_a_chip(client, fake_claude):
+    client.post("/api/v1/assets/upload", files={"file": ("q.mp4", _mp4_kb(), "video/mp4")}, data={"description": "v"})
+    client.post("/generate/random", data={"platform": "instagram", "campaign": "auto", "count": "1", "media_type": "video",
+                                          "batch_key": "q-1"}, follow_redirects=False)
+    ig = next(p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "instagram")
+    client.post(f"/posts/{ig['id']}/copy-to-fanvue", follow_redirects=False)
+    page = client.get("/posts").text
+    assert page.count('class="wl-title"') == 1 and "Also on:" in page and "Fanvue" in page
+    assert page.count(ig["caption"][:30]) == 1                         # the text is not repeated
+    assert "Also on:" not in client.get("/posts?platform=fanvue").text  # filtered to one platform: plain row

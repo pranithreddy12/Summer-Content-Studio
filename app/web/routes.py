@@ -653,9 +653,23 @@ async def posts_list(
     statuses = ["draft", "approved", "scheduled", "publishing", "sent_to_drafts", "published", "failed", "archived"]
     campaigns = db.execute(select(Tag).where(Tag.is_category == True).order_by(Tag.name)).scalars().all()
 
+    # One row per draft: the same text and media on several platforms (a Fanvue copy of an Instagram post) is
+    # shown once, with the other platforms as chips.
+    rows, seen = [], {}
+    for post in result["items"]:
+        key = (post.group_key, post.media_asset_id, post.caption) if post.group_key else None
+        if key in seen:
+            seen[key]["also"].append(post)
+            continue
+        row = {"post": post, "also": []}
+        rows.append(row)
+        if key:
+            seen[key] = row
+
     return _template_response("posts.html", {
         "request": request,
         "posts": result["items"],
+        "rows": rows,
         "total": result["total"],
         "page": page,
         "pages": (result["total"] + limit - 1) // limit,
