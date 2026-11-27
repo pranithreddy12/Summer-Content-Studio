@@ -25,7 +25,7 @@ from app.services.posts import (
     apply_variant, stats, update_post, mark_posted
 )
 from app.services.generation import generate_draft, regenerate
-from app.services.publishing import render_caption
+from app.services.publishing import get_rule, render_caption
 from app.services.random_draft import eligible_assets
 
 router = APIRouter()
@@ -813,8 +813,12 @@ async def post_approve(
     from app.security import safe_next
     dest = safe_next(next) if next else f"/posts/{post_id}"
     try:
-        approve_post(db, post_id)
-        return redirect_with_flash(dest, f"Post #{post_id} approved")
+        post = approve_post(db, post_id)
+        note = ""
+        if post.status == "approved" and get_settings().AUTO_SCHEDULE_ON_APPROVE and getattr(
+                get_rule(db, post.model_profile_id, post.platform), "id", None) is None:
+            note = f" - but {post.platform.capitalize()} has no posting rule, so it has no time. Add one on the Planner page."
+        return redirect_with_flash(dest, f"Post #{post_id} approved{note}")
     except HTTPException as e:
         return redirect_with_flash(dest, e.detail, "error")
     except Exception as e:
@@ -980,13 +984,38 @@ async def planner_page(
         weeks[rule.platform] = {"rule": rule, "days": days, "tz": rule.timezone, "waiting": waiting,
                                 "planned": sum(len(d["posts"]) for d in days)}
 
+    settings = get_settings()
+    missing = [p for p in ("instagram", "tiktok", "fanvue") if p not in weeks and settings.platform_enabled(p)]
     return _template_response("planner.html", {
         "request": request,
         "rules": rules,
         "rule_weeks": weeks,
+        "missing_rules": missing,
         "default_start": (now.astimezone(tz) + timedelta(days=1)).date().isoformat(),  # tomorrow, like the planner default
         "flash": get_flash(request),
     })
+
+
+@router.post("/planner/rules/add")
+async def planner_rule_add(platform: str = Form(...), profile_id: int = Form(1), db: Session = Depends(get_db)):
+    """Give a platform a default posting rule: one post a day, window and time zone copied from Instagram's rule."""
+    from app.models import PostingRule
+
+    if platform not in ("instagram", "tiktok", "fanvue"):
+        return redirect_with_flash("/planner", "Unknown platform", "error")
+    if db.execute(select(PostingRule).where(PostingRule.model_profile_id == profile_id,
+                                            PostingRule.platform == platform)).scalar_one_or_none():
+        return redirect_with_flash("/planner", f"{platform.capitalize()} already has a posting rule", "error")
+    base = db.execute(select(PostingRule).where(PostingRule.model_profile_id == profile_id,
+                                                PostingRule.platform == "instagram")).scalar_one_or_none()
+    rule = PostingRule(model_profile_id=profile_id, platform=platform, posts_per_week=7, min_per_day=1, max_per_day=1,
+                       is_active=True, auto_topup=False)
+    if base:
+        rule.window_start, rule.window_end, rule.min_gap_minutes, rule.timezone = (
+            base.window_start, base.window_end, base.min_gap_minutes, base.timezone)
+    db.add(rule)
+    db.commit()
+    return redirect_with_flash("/planner", f"{platform.capitalize()} posting rule added: one post a day. Press Plan to give approved posts a time.")
 
 
 @router.post("/planner/rules/{rule_id}")

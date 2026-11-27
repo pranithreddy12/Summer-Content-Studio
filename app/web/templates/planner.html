@@ -13,6 +13,17 @@
   <div class="banner banner-info"><p>No posting rules yet. Add one from the API or ask your developer to seed the defaults.</p></div>
   {% endif %}
 
+  {% for platform in missing_rules %}
+  <section class="pl">
+    <div class="pl-head"><h2>{{ platform | plat }}</h2><span class="badge badge-archived">No posting rule</span></div>
+    <form method="post" action="/planner/rules/add" class="fanvue-copy">
+      <input type="hidden" name="platform" value="{{ platform }}">
+      <span>Approved {{ platform | plat }} posts cannot get a time without a rule. This adds one post a day, using Instagram's hours and time zone.</span>
+      <button type="submit" class="btn btn-primary">Add {{ platform | plat }} rule</button>
+    </form>
+  </section>
+  {% endfor %}
+
   {% for platform, week in rule_weeks.items() %}
   {% set rule = week.rule %}
   <section class="pl">

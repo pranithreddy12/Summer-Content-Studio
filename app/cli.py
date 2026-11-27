@@ -203,6 +203,42 @@ def worker(once) -> None:
 
 
 @cli.command()
+@click.option("--yes", is_flag=True, help="Really delete. Without it the command only counts.")
+def delete_published(yes) -> None:
+    """Delete the records of every PUBLISHED post, so their media can be drafted again.
+
+    Permanent. The live posts on Instagram/TikTok/Fanvue are NOT touched; only the studio's record of them goes
+    (caption, link, stats). Drafts, approved, scheduled and archived posts are kept. A copy of the database file is
+    saved next to it first.
+    """
+    import shutil
+    from collections import Counter
+    from datetime import datetime
+
+    from sqlalchemy import select as _select
+
+    from app.models import ContentPost
+
+    with session_scope() as db:
+        posts = db.execute(_select(ContentPost).where(ContentPost.status == "published")).scalars().all()
+        counts = Counter(p.platform for p in posts)
+        click.echo(f"{len(posts)} published posts: " + (", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "none"))
+        if not posts or not yes:
+            if posts:
+                click.echo("Nothing deleted. Run again with --yes to delete them (this cannot be undone).")
+            return
+        url = get_settings().DATABASE_URL
+        if url.startswith("sqlite:///"):
+            src = Path(url[len("sqlite:///"):])
+            backup = src.with_name(f"{src.name}.before-delete-published-{datetime.now():%Y%m%d-%H%M%S}")
+            shutil.copy2(src, backup)
+            click.echo(f"Database copy saved: {backup}")
+        for post in posts:
+            db.delete(post)
+    click.echo(f"Deleted {len(posts)} published post records. Their media can be used again.")
+
+
+@cli.command()
 def notify_test() -> None:
     """Send a test push via the configured NOTIFY_PROVIDER."""
     from app.services.notifications import configured, send_test

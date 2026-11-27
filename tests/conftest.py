@@ -43,6 +43,7 @@ def settings(tmp_path_factory) -> Generator:
     os.environ["DASHBOARD_PASSWORD"] = ""
     # Phase 2: tests never post or push for real, whatever the developer's .env says
     os.environ["PUBLISHING_MODE"] = "off"
+    os.environ["AUTO_SCHEDULE_ON_APPROVE"] = "false"  # the production default is on; planner tests approve first and plan later
     os.environ["NOTIFY_PROVIDER"] = "none"
     os.environ["MIN_FREE_DISK_GB"] = "0"   # tests must not depend on the free space of the machine running them
     for secret in ISOLATED_KEYS:

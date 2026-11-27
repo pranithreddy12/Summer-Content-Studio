@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     # Planner
     AUTO_PLAN_ENABLED: bool = False
-    AUTO_SCHEDULE_ON_APPROVE: bool = False  # approving gives the post its slot at once (else: next daily planner run)
+    AUTO_SCHEDULE_ON_APPROVE: bool = True  # approving gives the post its slot at once (else: next daily planner run)
     PLANNER_RUN_HOUR: int = 6
     PLANNER_LEAD_MINUTES: int = 30
     PLANNER_MAX_TOPUP_PER_DAY: int = 3

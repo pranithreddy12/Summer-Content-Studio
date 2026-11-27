@@ -490,3 +490,46 @@ def test_bundle_image_gets_a_different_tiktok_video_that_instagram_uses_next_day
     assert day2["instagram"].media_asset_id == day1["tiktok"].media_asset_id         # yesterday's TikTok video
     assert day2["fanvue"].media_asset_id == day2["instagram"].media_asset_id
     assert day2["tiktok"].media_asset_id not in (day1["tiktok"].media_asset_id, day2["instagram"].media_asset_id)  # a new one
+
+
+def test_planner_offers_a_rule_for_platforms_without_one_and_approve_says_so(env, client, fake_claude):
+    env(AUTO_SCHEDULE_ON_APPROVE="true")
+    page = client.get("/planner").text
+    assert "Add Fanvue rule" in page and "Add TikTok rule" in page
+    client.post("/planner/rules/add", data={"platform": "tiktok"}, follow_redirects=False)
+    client.post("/planner/rules/add", data={"platform": "tiktok"}, follow_redirects=False)  # second click: refused, no duplicate
+    page = client.get("/planner").text
+    assert "Add TikTok rule" not in page and "Add Fanvue rule" in page and "Plan TikTok" in page
+
+    client.post("/api/v1/assets/upload", files={"file": ("r.mp4", _mp4_kb(), "video/mp4")}, data={"description": "v"})
+    client.post("/generate/random", data={"platform": "instagram", "campaign": "auto", "count": "1", "media_type": "video",
+                                          "batch_key": "rule-msg"}, follow_redirects=False)
+    ig = next(p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "instagram")
+    client.post(f"/posts/{ig['id']}/copy-to-fanvue", follow_redirects=False)
+    fv = next(p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "fanvue")
+    out = client.post(f"/posts/{fv['id']}/approve", data={"next": ""}, follow_redirects=True).text
+    assert "Fanvue has no posting rule" in out
+
+
+def test_delete_published_counts_first_then_deletes_only_published_and_keeps_a_copy(client, fake_claude):
+    from click.testing import CliRunner
+    import app.db as appdb
+    from app.cli import cli
+    from app.models import ContentPost
+
+    client.post("/api/v1/assets/upload", files={"file": ("d.mp4", _mp4_kb(), "video/mp4")}, data={"description": "v"})
+    client.post("/generate/random", data={"platform": "instagram", "campaign": "auto", "count": "1", "media_type": "video",
+                                          "both_platforms": "true", "batch_key": "del-1"}, follow_redirects=False)
+    with appdb.get_session_factory()() as s:
+        ids = [p.id for p in s.query(ContentPost).all()]
+        s.get(ContentPost, ids[0]).status = "published"
+        s.commit()
+    keep = len(ids) - 1
+    dry = CliRunner().invoke(cli, ["delete-published"])
+    assert "1 published posts" in dry.output and "Nothing deleted" in dry.output
+    with appdb.get_session_factory()() as s:
+        assert s.query(ContentPost).count() == len(ids)
+    done = CliRunner().invoke(cli, ["delete-published", "--yes"])
+    assert "Deleted 1 published" in done.output and "Database copy saved" in done.output
+    with appdb.get_session_factory()() as s:
+        assert s.query(ContentPost).count() == keep and s.query(ContentPost).filter_by(status="published").count() == 0
