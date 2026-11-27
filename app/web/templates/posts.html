@@ -46,7 +46,7 @@
     {% for post in posts %}
     <li class="wl-item wl-item-queue">
       <a class="wl-thumb" href="/posts/{{ post.id }}" tabindex="-1" aria-hidden="true">
-        {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}<img src="/api/v1/assets/{{ post.asset.id }}/file" alt="" loading="lazy">{% else %}<span>No image</span>{% endif %}
+        {% if post.asset and post.asset.media_type == 'image' and post.asset.storage_type != 'external_url' %}<img src="/api/v1/assets/{{ post.asset.id }}/file" alt="" loading="lazy">{% elif post.asset and post.asset.media_type == 'video' and post.asset.storage_type != 'external_url' %}<video src="/api/v1/assets/{{ post.asset.id }}/file#t=0.1" preload="metadata" muted playsinline></video>{% else %}<span>{{ 'Video link' if post.asset and post.asset.media_type == 'video' else 'No image' }}</span>{% endif %}
       </a>
       <div class="wl-main">
         <a class="wl-title" href="/posts/{{ post.id }}">{{ post.caption }}</a>
