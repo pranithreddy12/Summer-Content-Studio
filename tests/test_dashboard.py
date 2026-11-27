@@ -405,3 +405,20 @@ def test_dashboard_retry_only_for_failed(client):
     pid = make_post(client)
     r = client.post(f"/posts/{pid}/retry", follow_redirects=False)
     assert r.status_code == 303 and "kind=error" in r.headers["location"]
+
+
+def test_fanvue_twin_copies_the_instagram_draft(client, fake_claude):
+    """fanvue_twin=True: each new Instagram draft also gets a Fanvue draft with the same text, never approved."""
+    from app.db import get_session_factory  # noqa: F401  (session helper used below)
+    from app.services.random_draft import generate_random_drafts
+    from app.schemas import RandomDraftRequest
+    from app.models import Platform
+    import app.db as appdb
+
+    client.post("/api/v1/assets/upload", files={"file": ("a.mp4", _mp4_kb(), "video/mp4")}, data={"description": "v"})
+    with appdb.get_session_factory()() as s:
+        out = generate_random_drafts(s, RandomDraftRequest(platform=Platform.instagram, campaign="auto", count=1),
+                                     fake_claude, announce=False, fanvue_twin=True)
+        ig, fv = [p for p in out["posts"] if p.platform == "instagram"][0], [p for p in out["posts"] if p.platform == "fanvue"][0]
+        assert fv.caption == ig.caption and fv.content_type == "fanvue_post" and fv.status == "draft"
+        assert fv.group_key and fv.group_key == ig.group_key and fv.fanvue_audience == "subscribers"

@@ -379,7 +379,8 @@ def plan_week(db: Session, rule, now: datetime, rng: random.Random | None = None
                         None if settings.AUTO_DRAFT_MEDIA == "any" else settings.AUTO_DRAFT_MEDIA),
                     include_used=settings.AUTO_DRAFT_INCLUDE_USED,
                     both_platforms=settings.AUTO_DRAFT_BOTH_PLATFORMS and rule.platform == "instagram",
-                ), client, announce=not settings.auto_approve(rule.platform))
+                ), client, announce=not settings.auto_approve(rule.platform),
+                    fanvue_twin=settings.AUTO_DRAFT_FANVUE_TWIN and rule.platform == "instagram" and settings.platform_enabled("fanvue"))
                 result.topup_drafts.extend(out["posts"])
                 remaining_cap -= 1
             except Exception as e:  # top-up is best-effort, never blocks the plan

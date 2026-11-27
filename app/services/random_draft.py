@@ -59,7 +59,21 @@ def _campaign_for(asset: MediaAsset, requested: str) -> str:
     return next((t.slug for t in asset.tags if t.is_category), DEFAULT_CAMPAIGN)
 
 
-def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announce: bool = True) -> dict:
+def _fanvue_twin(db: Session, post: ContentPost) -> ContentPost:
+    """Copy an Instagram draft as a Fanvue draft (same text and media, subscribers only, free). Draft only."""
+    post.group_key = post.group_key or uuid.uuid4().hex[:40]
+    twin = ContentPost(
+        model_profile_id=post.model_profile_id, media_asset_id=post.media_asset_id, platform="fanvue",
+        content_type="fanvue_post", campaign=post.campaign, hook=post.hook, caption=post.caption,
+        hashtags=[], call_to_action=post.call_to_action, content_notes=post.content_notes,
+        source=post.source, group_key=post.group_key, fanvue_audience="subscribers")
+    db.add(twin)
+    db.commit()
+    return get_post(db, twin.id)
+
+
+def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announce: bool = True,
+                           fanvue_twin: bool = False) -> dict:
     """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created.
 
     both_platforms (PLAN §9a step 7): each random VIDEO asset creates an
@@ -119,6 +133,8 @@ def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announc
                 errors.append({"asset_id": asset.id, "filename": asset.filename, "status": e.status_code, **detail})
                 break
 
+    if fanvue_twin:  # one Fanvue copy per new Instagram draft
+        posts += [_fanvue_twin(db, p) for p in list(posts) if p.platform == "instagram"]
     if not posts:
         if errors:
             raise AppError(errors[-1].get("code", "error"), errors[-1]["message"], errors[-1]["status"])
