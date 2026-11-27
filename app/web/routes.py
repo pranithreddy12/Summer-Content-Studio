@@ -821,6 +821,18 @@ async def post_approve(
         return redirect_with_flash(dest, str(e), "error")
 
 
+@router.post("/posts/{post_id}/copy-to-fanvue")
+async def post_copy_to_fanvue(post_id: int, db: Session = Depends(get_db)):
+    """Make a Fanvue draft with the same text and media; it still needs approval."""
+    from app.services import AppError
+    from app.services.random_draft import copy_to_fanvue
+    try:
+        twin = copy_to_fanvue(db, post_id)
+        return redirect_with_flash(f"/posts/{twin.id}", f"Fanvue draft #{twin.id} created from post #{post_id}")
+    except (HTTPException, AppError) as e:
+        return redirect_with_flash(f"/posts/{post_id}", getattr(e, "detail", None) or e.message, "error")
+
+
 @router.post("/posts/{post_id}/archive")
 async def post_archive(
     post_id: int,

@@ -72,6 +72,20 @@ def _fanvue_twin(db: Session, post: ContentPost) -> ContentPost:
     return get_post(db, twin.id)
 
 
+def copy_to_fanvue(db: Session, post_id: int) -> ContentPost:
+    """The 'Copy to Fanvue' button: a Fanvue draft from an existing Instagram/TikTok post. One copy per post."""
+    post = get_post(db, post_id)
+    if post.platform == "fanvue":
+        raise AppError("validation_error", "This is already a Fanvue post.", 422)
+    if post.status == "archived":
+        raise AppError("invalid_transition", "Archived posts can't be copied.", 409)
+    if post.group_key and db.execute(select(ContentPost.id).where(
+            ContentPost.group_key == post.group_key, ContentPost.platform == "fanvue",
+            ContentPost.status != "archived")).first():
+        raise AppError("conflict", "This post already has a Fanvue copy.", 409)
+    return _fanvue_twin(db, post)
+
+
 def generate_random_drafts(db: Session, req: RandomDraftRequest, client, announce: bool = True,
                            fanvue_twin: bool = False) -> dict:
     """Returns {"posts": [ContentPost], "errors": [...], "available": n}. Raises only if nothing was created.

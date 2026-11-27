@@ -422,3 +422,16 @@ def test_fanvue_twin_copies_the_instagram_draft(client, fake_claude):
         ig, fv = [p for p in out["posts"] if p.platform == "instagram"][0], [p for p in out["posts"] if p.platform == "fanvue"][0]
         assert fv.caption == ig.caption and fv.content_type == "fanvue_post" and fv.status == "draft"
         assert fv.group_key and fv.group_key == ig.group_key and fv.fanvue_audience == "subscribers"
+
+
+def test_copy_to_fanvue_button_makes_one_draft(client, fake_claude):
+    client.post("/api/v1/assets/upload", files={"file": ("b.mp4", _mp4_kb(), "video/mp4")}, data={"description": "v"})
+    client.post("/generate/random", data={"platform": "instagram", "campaign": "auto", "count": "1", "media_type": "video",
+                                          "batch_key": "cf-1"}, follow_redirects=False)
+    ig = next(p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "instagram")
+    assert "Copy to Fanvue" in client.get(f"/posts/{ig['id']}").text
+    client.post(f"/posts/{ig['id']}/copy-to-fanvue", follow_redirects=False)
+    fv = [p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "fanvue"]
+    assert len(fv) == 1 and fv[0]["caption"] == ig["caption"] and fv[0]["status"] == "draft"
+    client.post(f"/posts/{ig['id']}/copy-to-fanvue", follow_redirects=False)  # second click: refused
+    assert len([p for p in client.get("/api/v1/posts").json()["items"] if p["platform"] == "fanvue"]) == 1

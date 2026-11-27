@@ -46,6 +46,11 @@
     {% if next_draft_id %}<a class="decide-skip" href="/posts/{{ next_draft_id }}">Skip to next draft &rarr;</a>{% endif %}
   </div>
   {% endif %}
+  {% if post.platform != 'fanvue' and post.status != 'archived' %}
+  <form method="post" action="/posts/{{ post.id }}/copy-to-fanvue" class="inline-form">
+    <button type="submit" class="btn btn-ghost">Copy to Fanvue</button>
+  </form>
+  {% endif %}
 
   <div class="post-layout">
     <div class="post-main">
