@@ -45,7 +45,7 @@ def _heartbeat(db, result: dict, now) -> None:
         db.add(hb)
     else:
         prev = hb.last_result or {}
-        for key in ("planner_ran", "engagement_at", "fan_inbox_at", "fan_purge_at", "fanvue_links_at",
+        for key in ("planner_ran", "planner_drafts", "engagement_at", "fan_inbox_at", "fan_purge_at", "fanvue_links_at",
                     "fanvue_digest_at"):   # state that must survive loops that do not touch it
             if key not in result and key in prev:
                 result[key] = prev[key]
@@ -341,7 +341,7 @@ def fan_purge_stage(db, now: datetime, result: dict) -> None:
     result["fan_purge"] = fan_inbox.purge_old(db, now)
 
 
-def planner_tick(db, now: datetime, state: dict) -> dict:
+def planner_tick(db, now: datetime, state: dict, drafts: dict | None = None) -> dict:
     """AUTO_PLAN_ENABLED: once per local day, from PLANNER_RUN_HOUR on, plan the next 7 days for every
     active rule. `state` maps rule id -> last local day planned (persisted in the heartbeat row)."""
     from app.api.dependencies import get_claude_client
@@ -358,6 +358,8 @@ def planner_tick(db, now: datetime, state: dict) -> dict:
         state[str(rule.id)] = today  # mark first: a failing plan must not retry every minute
         try:
             res = plan_week(db, rule, now, client=get_claude_client() if rule.auto_topup else None)
+            if drafts is not None:  # shown on the Planner page: "last run, drafts written"
+                drafts[str(rule.id)] = f"{today}:{len(res.topup_drafts)}"
             out["planned"] += 1
             out["filled"] += len(res.filled)
         except Exception:
@@ -420,8 +422,9 @@ def run_once(db, now, http=None) -> dict:
         def tick() -> None:
             hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
             state = dict((hb.last_result or {}).get("planner_ran", {})) if hb else {}
-            result["planner"] = planner_tick(db, now, state)
-            result["planner_ran"] = state
+            drafts = dict((hb.last_result or {}).get("planner_drafts", {})) if hb else {}
+            result["planner"] = planner_tick(db, now, state, drafts)
+            result["planner_ran"], result["planner_drafts"] = state, drafts
         stage("planner", tick)
 
     beat()  # stamped at the END of the iteration (a publish blocks for minutes)

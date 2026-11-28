@@ -999,12 +999,22 @@ async def planner_page(
                                 "planned": sum(len(d["posts"]) for d in days)}
 
     settings = get_settings()
+    from app.models import WorkerHeartbeat
+    hb = db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.id == 1)).scalar_one_or_none()
+    beat = (hb.last_result or {}) if hb else {}
+    for platform, week in weeks.items():  # the worker's last daily run for this rule
+        rid = str(week["rule"].id)
+        day, _, n = (beat.get("planner_drafts", {}).get(rid) or "").partition(":")
+        week["last_run"] = beat.get("planner_ran", {}).get(rid)
+        week["last_drafts"] = int(n) if n.isdigit() and day == week["last_run"] else None
     missing = [p for p in ("instagram", "tiktok", "fanvue") if p not in weeks and settings.platform_enabled(p)]
     return _template_response("planner.html", {
         "request": request,
         "rules": rules,
         "rule_weeks": weeks,
         "missing_rules": missing,
+        "plan_on": settings.AUTO_PLAN_ENABLED,
+        "all_platforms": settings.AUTO_DRAFT_ALL_PLATFORMS,
         "default_start": (now.astimezone(tz) + timedelta(days=1)).date().isoformat(),  # tomorrow, like the planner default
         "flash": get_flash(request),
     })

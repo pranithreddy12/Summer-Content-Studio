@@ -478,3 +478,15 @@ def test_only_one_worker_per_database(tmp_path):
     again = worker_lock(s)
     assert again is not None
     again.close()
+
+
+def test_planner_page_shows_the_last_daily_run_and_hints(phase2, client):
+    phase2(PUBLISHING_MODE="dry_run", AUTO_PLAN_ENABLED="true")
+    add_rules()
+    approved(client, 1)
+    page = client.get("/planner").text
+    assert "has not run yet" in page and "No drafts are written" in page          # before the first run; top-up is off
+    run(datetime(2026, 11, 2, 7, 0, tzinfo=timezone.utc), NoHttp())
+    assert set(db().query(sch.WorkerHeartbeat).one().last_result["planner_drafts"].values()) == {"2026-11-02:0"}
+    page = client.get("/planner").text
+    assert "Last daily run: <strong>2026-11-02</strong>, wrote <strong>0</strong> drafts" in page

@@ -32,6 +32,12 @@
       <span class="small">{{ rule.timezone }}</span>
       {% if rule.is_active %}<span class="badge badge-approved">Rule on</span>{% else %}<span class="badge badge-archived">Rule paused</span>{% endif %}
     </div>
+    <p class="pl-note">
+      {% if not plan_on %}Daily planning is off (turn it on in Settings, "Plan and draft every day").
+      {% elif week.last_run %}Last daily run: <strong>{{ week.last_run }}</strong>{% if week.last_drafts is not none %}, wrote <strong>{{ week.last_drafts }}</strong> draft{{ '' if week.last_drafts == 1 else 's' }}{% endif %}.
+      {% else %}Daily planning is on; it has not run yet (it runs once a day from the hour set in Settings).{% endif %}
+      {% if plan_on and platform == 'instagram' and not rule.auto_topup %}<strong>No drafts are written: tick "Write AI drafts" in this rule's settings below.</strong>{% endif %}
+    </p>
 
     <form method="post" action="/planner/plan" class="pl-plan">
       <input type="hidden" name="platform" value="{{ platform }}">
@@ -109,6 +115,12 @@
         </div>
         <label class="check"><input type="checkbox" name="is_active" {% if rule.is_active %}checked{% endif %}> <span>Rule on (planning is blocked while it is off)</span></label>
         <label class="check"><input type="checkbox" name="auto_topup" {% if rule.auto_topup %}checked{% endif %}> <span>Write AI drafts for slots with no approved post</span></label>
+        <p class="pl-note">
+          {% if all_platforms and platform == 'instagram' %}Daily drafts for all platforms is on: this also writes the TikTok and Fanvue drafts. Tick it.
+          {% elif all_platforms %}Leave this off: {{ platform | plat }} drafts are written together with Instagram's (Settings, "Daily drafts for Instagram, TikTok and Fanvue together").
+          {% elif platform == 'fanvue' %}Fanvue has no drafter of its own. Turn on "Daily drafts for Instagram, TikTok and Fanvue together" in Settings and tick this on the Instagram rule.
+          {% elif platform == 'instagram' %}For a daily Instagram + TikTok + Fanvue set, also turn on "Daily drafts for Instagram, TikTok and Fanvue together" in Settings.{% endif %}
+        </p>
         <div class="form-actions"><button type="submit" class="btn">Save rule</button></div>
       </form>
     </details>
